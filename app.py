@@ -28,58 +28,60 @@ def inject_css():
     st.markdown(f"""
     <style>
       :root {{
-        --green:  {PALETTE["green"]};
-        --blue:   {PALETTE["blue"]};
-        --orange: {PALETTE["orange"]};
-        --yellow: {PALETTE["yellow"]};
-        --red:    {PALETTE["red"]};
-        --ink:    {PALETTE["ink"]};
-        --bg2:    {PALETTE["bg2"]};
+        --green:  #78A22F;
+        --blue:   #007C9E;
+        --orange: #F58025;
+        --yellow: #F8E71C;
+        --red:    #D0021B;
+        --ink:    #1F2A33;
+        --bg2:    #F7FBFC;
       }}
 
-      html, body, [class*="st-"], .stApp {{
-        font-family: Verdana, Geneva, sans-serif !important;
+      /* Use Verdana for text, but DO NOT override icon/emoji fonts */
+      html, body, .stApp {{
+        font-family: Verdana, Geneva, Arial, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
         color: var(--ink);
         -webkit-font-smoothing: antialiased;
       }}
 
-      /* Top banner */
-      .app-banner {{
-        padding: 14px 18px;
-        border-radius: 14px;
-        margin: 2px 0 14px 0;
-        background: linear-gradient(90deg, var(--green), var(--blue));
-        color: white;
+      /* Restore Material Icons ligature fonts so arrows/chevrons render as icons */
+      .material-icons,
+      .material-icons-outlined,
+      .material-icons-round,
+      .material-icons-sharp,
+      .material-icons-two-tone {{
+        font-family: "Material Icons", "Material Icons Outlined", "Material Icons Round",
+                     "Material Icons Sharp", "Material Icons Two Tone" !important;
+        font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
+        text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal;
+        direction: ltr; -webkit-font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
       }}
-      .app-banner h2 {{ margin: 0 0 2px 0; font-weight: 700; }}
+
+      /* Solid-color banner */
+      .app-banner {{
+        padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
+        background: var(--green); color: #fff;  /* or change to var(--blue) */
+      }}
+      .app-banner h2 {{ margin: 0 0 4px 0; font-weight: 700; }}
       .app-banner p  {{ margin: 0; opacity: .95; }}
 
-      /* Buttons */
       .stButton > button, .stDownloadButton button {{
-        border-radius: 10px;
-        border: 1px solid var(--blue);
-        background: var(--blue);
-        color: #fff;
-        font-weight: 700;
+        border-radius: 10px; border: 1px solid var(--blue); background: var(--blue);
+        color: #fff; font-weight: 700;
       }}
-      .stButton > button:hover, .stDownloadButton button:hover {{
-        filter: brightness(0.92);
-      }}
+      .stButton > button:hover, .stDownloadButton button:hover {{ filter: brightness(0.92); }}
 
-      /* Tags / pills */
-      .tag {{
-        display: inline-block; padding: 3px 10px;
-        border-radius: 999px; font-size: 12px; font-weight: 700; margin-right: 8px;
-      }}
-      .tag-priority {{ background: var(--orange); color: #000; }}
-      .tag-admit    {{ background: var(--green);  color: #fff; }}
-      .tag-equity   {{ background: var(--yellow); color: #000; border:1px solid #D8C600; }}
+      .tag {{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; margin-right:8px; }}
+      .tag-priority {{ background: var(--orange); color:#000; }}
+      .tag-admit    {{ background: var(--green);  color:#fff; }}
+      .tag-equity   {{ background: var(--yellow); color:#000; border:1px solid #D8C600; }}
       .tag-reserve  {{ background: var(--bg2);    color: var(--ink); border:1px solid #CFDCE4; }}
 
-      /* Tables */
       .stDataFrame tbody td, .stDataFrame thead th {{ font-size: 13px; }}
-      h1,h2,h3 {{ letter-spacing: .2px; }}
+      h1,h2,h3 {{ letter-spacing:.2px; }}
     </style>
+    """, unsafe_allow_html=True)
+
     """, unsafe_allow_html=True)
 
 # ---------------------------
@@ -488,5 +490,6 @@ with tab_about:
     """)
 
 st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
+
 
 
