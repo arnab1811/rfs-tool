@@ -177,13 +177,59 @@ with st.expander("📄 Expected columns (you can map after upload)"):
 - **ApplicationDate** (for dedup)
 """)
 
-uploaded = st.file_uploader("Upload applications CSV", type=["csv"])
+import csv
+
+def read_uploaded_table(uploaded_file) -> pd.DataFrame:
+    """
+    Robustly read user uploads:
+    - .xlsx via openpyxl
+    - .csv with multiple encodings and delimiters
+    """
+    name = (uploaded_file.name or "").lower()
+
+    # Excel first
+    if name.endswith(".xlsx") or name.endswith(".xls"):
+        try:
+            return pd.read_excel(uploaded_file, engine="openpyxl")
+        except Exception as e:
+            st.error(f"Could not read Excel file: {e}")
+            raise
+
+    # Otherwise treat as CSV (try encodings + sniff delimiter)
+    raw_bytes = uploaded_file.getvalue()
+
+    # Try a few encodings
+    encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+    for enc in encodings:
+        try:
+            # First, let pandas infer the delimiter (python engine supports sep=None)
+            return pd.read_csv(io.BytesIO(raw_bytes), encoding=enc, sep=None, engine="python")
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            # Try common delimiters explicitly
+            for sep in [",", ";", "\t", "|"]:
+                try:
+                    return pd.read_csv(io.BytesIO(raw_bytes), encoding=enc, sep=sep)
+                except Exception:
+                    pass
+            # move to next encoding
+
+    # Last resort: decode with replacement to avoid crash
+    text = raw_bytes.decode("utf-8", errors="replace")
+    try:
+        return pd.read_csv(io.StringIO(text), sep=None, engine="python")
+    except Exception as e:
+        st.error("Unable to read the file. Please export as CSV (UTF-8) or XLSX and try again.")
+        raise e
+
+uploaded = st.file_uploader("Upload applications file", type=["csv", "xlsx"])
 
 if uploaded is None:
     st.info("Tip: test with the sample file in the repo.")
     st.stop()
 
-df = pd.read_csv(uploaded)
+df = read_uploaded_table(uploaded)
 cols = df.columns.tolist()
 
 st.subheader("🧭 Map your columns")
@@ -335,3 +381,4 @@ with st.expander("📊 Summary"):
     st.write(pretty.groupby(["Sector","Decision"]).size().rename("N"))
 
 st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
+
