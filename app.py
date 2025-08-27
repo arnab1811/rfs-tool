@@ -82,7 +82,6 @@ def inject_css():
     </style>
     """, unsafe_allow_html=True)
 
-    """, unsafe_allow_html=True)
 
 # ---------------------------
 # Required secret salt
@@ -490,6 +489,7 @@ with tab_about:
     """)
 
 st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
+
 
 
 
