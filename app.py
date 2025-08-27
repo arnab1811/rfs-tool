@@ -13,6 +13,74 @@ st.set_page_config(
     page_icon="✅",
     layout="wide"
 )
+# ------------ Brand palette & CSS ------------
+PALETTE = {
+    "green":  "#78A22F",
+    "blue":   "#007C9E",
+    "orange": "#F58025",
+    "yellow": "#F8E71C",
+    "red":    "#D0021B",
+    "ink":    "#1F2A33",  # text
+    "bg2":    "#F7FBFC"   # soft background
+}
+
+def inject_css():
+    st.markdown(f"""
+    <style>
+      :root {{
+        --green:  {PALETTE["green"]};
+        --blue:   {PALETTE["blue"]};
+        --orange: {PALETTE["orange"]};
+        --yellow: {PALETTE["yellow"]};
+        --red:    {PALETTE["red"]};
+        --ink:    {PALETTE["ink"]};
+        --bg2:    {PALETTE["bg2"]};
+      }}
+
+      html, body, [class*="st-"], .stApp {{
+        font-family: Verdana, Geneva, sans-serif !important;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+      }}
+
+      /* Top banner */
+      .app-banner {{
+        padding: 14px 18px;
+        border-radius: 14px;
+        margin: 2px 0 14px 0;
+        background: linear-gradient(90deg, var(--green), var(--blue));
+        color: white;
+      }}
+      .app-banner h2 {{ margin: 0 0 2px 0; font-weight: 700; }}
+      .app-banner p  {{ margin: 0; opacity: .95; }}
+
+      /* Buttons */
+      .stButton > button, .stDownloadButton button {{
+        border-radius: 10px;
+        border: 1px solid var(--blue);
+        background: var(--blue);
+        color: #fff;
+        font-weight: 700;
+      }}
+      .stButton > button:hover, .stDownloadButton button:hover {{
+        filter: brightness(0.92);
+      }}
+
+      /* Tags / pills */
+      .tag {{
+        display: inline-block; padding: 3px 10px;
+        border-radius: 999px; font-size: 12px; font-weight: 700; margin-right: 8px;
+      }}
+      .tag-priority {{ background: var(--orange); color: #000; }}
+      .tag-admit    {{ background: var(--green);  color: #fff; }}
+      .tag-equity   {{ background: var(--yellow); color: #000; border:1px solid #D8C600; }}
+      .tag-reserve  {{ background: var(--bg2);    color: var(--ink); border:1px solid #CFDCE4; }}
+
+      /* Tables */
+      .stDataFrame tbody td, .stDataFrame thead th {{ font-size: 13px; }}
+      h1,h2,h3 {{ letter-spacing: .2px; }}
+    </style>
+    """, unsafe_allow_html=True)
 
 # ---------------------------
 # Required secret salt
@@ -22,6 +90,7 @@ if "SALT" not in st.secrets or not st.secrets["SALT"]:
     st.stop()
 
 SALT = st.secrets["SALT"]
+inject_css()
 
 # ---------------------------
 # Defaults / constants
@@ -157,6 +226,12 @@ st.sidebar.caption("Privacy: Emails are hashed to PIDs immediately with a secret
 # ---------------------------
 # Main – Upload & mapping
 # ---------------------------
+st.markdown(
+    '<div class="app-banner"><h2>Recruitment Fit Score (RFS)</h2>'
+    '<p>Pseudonymized shortlisting for fair, transparent intake – Verdana UI & NFP palette.</p></div>',
+    unsafe_allow_html=True
+)
+
 st.title("Recruitment Fit Score (RFS) – Pseudonymized Reviewer Tool")
 st.write("Upload an **applications CSV** (UTF-8). Emails are immediately replaced with `PID` (hashed).")
 
@@ -369,16 +444,49 @@ hash_cols = [c for c in work.columns if c.startswith("HASH_")]
 pretty = pd.concat([pretty, work[hash_cols]], axis=1)
 
 st.success(f"Scored {len(pretty)} applicants. (Emails replaced by PID)")
-st.dataframe(pretty, use_container_width=True)
+tab_score, tab_summary, tab_about = st.tabs(["📊 Score", "📈 Summary", "ℹ️ About"])
 
-# Download button
-csv_buf = io.StringIO()
-pretty.to_csv(csv_buf, index=False)
-st.download_button("⬇️ Download scored CSV (pseudonymized)", data=csv_buf.getvalue(), file_name="rfs_scored.csv", mime="text/csv")
+with tab_score:
+    st.dataframe(pretty, use_container_width=True)
+    csv_buf = io.StringIO()
+    pretty.to_csv(csv_buf, index=False)
+    st.download_button("⬇️ Download scored CSV (pseudonymized)",
+                       data=csv_buf.getvalue(), file_name="rfs_scored.csv", mime="text/csv")
 
-with st.expander("📊 Summary"):
-    st.write(pretty.groupby(["Decision"]).size().rename("N"))
-    st.write(pretty.groupby(["Sector","Decision"]).size().rename("N"))
+with tab_summary:
+    # Decision counts with colored tags
+    dec_counts = pretty["Decision"].value_counts().to_dict()
+
+    def pill(lbl, css_class):
+        n = dec_counts.get(lbl, 0)
+        st.markdown(f'<span class="tag {css_class}">{lbl}: {n}</span>', unsafe_allow_html=True)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: pill("Priority", "tag-priority")
+    with c2: pill("Admit", "tag-admit")
+    with c3: pill("Reserve (Equity)", "tag-equity")
+    with c4: pill("Reserve", "tag-reserve")
+
+    st.divider()
+    st.subheader("By sector")
+    by_sector = pretty.groupby(["Sector","Decision"]).size().to_frame("N").reset_index()
+    st.dataframe(by_sector, use_container_width=True)
+
+with tab_about:
+    st.markdown("""
+    **What this tool does**  
+    - Scores applicants **only** on application-time fields.  
+    - **Immediately pseudonymizes** emails to PID (salted hash).  
+    - Provides transparent components & suggested labels.
+
+    **Brand colors**  
+    - Green `#78A22F` (Admit), Blue `#007C9E` (primary), Orange `#F58025` (Priority),  
+      Yellow `#F8E71C` (Equity), Red `#D0021B` (alerts).
+
+    **Privacy**  
+    - No raw emails in outputs. Keep SALT in Streamlit Secrets (Cloud) or `.streamlit/secrets.toml` (local).
+    """)
 
 st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
+
 
