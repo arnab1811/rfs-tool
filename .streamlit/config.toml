@@ -1,0 +1,6 @@
+[theme]
+base = "light"
+primaryColor = "#007C9E"              # Blue
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F7FBFC"  # very light blue
+textColor = "#1F2A33"                 # dark slate
