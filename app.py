@@ -323,8 +323,8 @@ def pick(label, guess):
         "FunctionTitle": ["FunctionTitle", "Function", "function", "Position", "Job Title"],
         "WeeklyTimeBand": ["WeeklyTimeBand", "TimeBand", "Time", "Weekly Time"],
         "LanguageComfort": ["LanguageComfort", "Language", "language"],
-        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee"],
-        "AlumniReferral": ["AlumniReferral", "Alumni", "alumni", "Referral"],
+        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee", "RefereeConfirms"],
+        "AlumniReferral": ["AlumniReferral", "Alumni", "alumni", "Referral", "AlumniRef"],
         "ApplicationDate": ["ApplicationDate", "Date", "date", "Timestamp"],
     }
     
@@ -432,9 +432,16 @@ def sector_points(s):
     return sector_uplift.get(s_clean, 0)
 work["_sector_points"] = work["_sector"].map(sector_points).clip(0, w_sector)
 
-# Referee & Alumni
+# Referee & Alumni - more robust yes/no detection
 def yes_no_points(x, cap):
-    if isinstance(x, str) and x.strip().lower() in ["yes","y","true","1"]:
+    if pd.isna(x) or x is None:
+        return 0
+    text = str(x).strip().lower()
+    if not text:
+        return 0
+    # Check for various yes patterns
+    yes_patterns = ["yes", "y", "true", "1", "ja", "oui", "si"]
+    if any(text == p or text.startswith(p + " ") or text.startswith(p + ",") for p in yes_patterns):
         return cap
     return 0
 work["_ref_points"] = work[ref_col].apply(lambda x: yes_no_points(x, w_referee)) if ref_col != "— none —" and ref_col in work.columns else 0
