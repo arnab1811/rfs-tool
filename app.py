@@ -239,11 +239,11 @@ st.write("Upload an **applications CSV** (UTF-8). Emails are immediately replace
 
 with st.expander("📄 Expected columns (you can map after upload)"):
     st.markdown("""
-**Minimum required:**
-- **Organisation / SectorText** (text; used to infer sector if structured sector not present)
+**All fields are optional.** Map what you have:
 
-**Recommended (optional):**
+**Recommended:**
 - **Email** (unique applicant ID; will be hashed to PID) — if not provided, row-based IDs are generated
+- **Organisation / SectorText** (text; used to infer sector) — if not provided, sector defaults to 'Other/Unclassified'
 - **MotivationText** (free text) — if not provided, motivation score = 0
 
 **Optional:**
@@ -317,7 +317,7 @@ def pick(label, guess):
     return st.selectbox(label, ["— none —"] + cols, index=(cols.index(guess)+1 if guess in cols else 0))
 
 email_col = pick("Email (optional; for PID generation)", "Email")
-org_col = pick("Organisation / SectorText", "Organisation")
+org_col = pick("Organisation / SectorText (optional)", "Organisation")
 sector_col = pick("Sector (structured; optional)", "Sector")
 mot_col = pick("MotivationText (optional)", "MotivationText")
 func_col = pick("FunctionTitle (optional)", "FunctionTitle")
@@ -327,16 +327,13 @@ ref_col = pick("RefereeConfirmsFit (yes/no; optional)", "RefereeConfirmsFit")
 alm_col = pick("AlumniReferral (yes/no; optional)", "AlumniReferral")
 date_col = pick("ApplicationDate (optional; for dedup)", "ApplicationDate")
 
-# Only Organisation is required now
-if org_col == "— none —":
-    st.error("Please map at least: Organisation/SectorText.")
-    st.stop()
-
-# Show warnings for unmapped recommended fields
+# No fields are strictly required now - show warnings for unmapped recommended fields
 if email_col == "— none —":
     st.warning("⚠️ No Email column mapped. Row-based PIDs will be generated (less reliable for deduplication).")
 if mot_col == "— none —":
     st.warning("⚠️ No MotivationText column mapped. Motivation scores will be 0 for all applicants.")
+if org_col == "— none —":
+    st.warning("⚠️ No Organisation/SectorText column mapped. Sector will default to 'Other/Unclassified' for all applicants.")
 
 # ---------------------------
 # Force pseudonymization (IMMEDIATE)
@@ -379,8 +376,11 @@ else:
 # ---------------------------
 if sector_col != "— none —" and sector_col in work.columns:
     work["_sector"] = work[sector_col].fillna("Other/Unclassified")
-else:
+elif org_col != "— none —" and org_col in work.columns:
     work["_sector"] = work[org_col].apply(org_to_sector)
+else:
+    # No sector or org column - default all to Other/Unclassified
+    work["_sector"] = "Other/Unclassified"
 
 # ---------------------------
 # Heuristic motivation scores (0–10 each; auto)
@@ -508,9 +508,11 @@ with tab_about:
     - **Immediately pseudonymizes** emails to PID (salted hash).  
     - Provides transparent components & suggested labels.
 
-    **Required fields**  
-    - Only **Organisation/SectorText** is mandatory.
-    - Email and MotivationText are recommended but optional.
+    **Field requirements**  
+    - **All fields are optional** — map what you have available.
+    - Missing Email → row-based PIDs generated
+    - Missing MotivationText → motivation score = 0
+    - Missing Organisation → sector defaults to 'Other/Unclassified'
 
     **Brand colors**  
     - Green `#78A22F` (Admit), Blue `#007C9E` (primary), Orange `#F58025` (Priority),  
