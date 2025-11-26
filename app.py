@@ -314,7 +314,31 @@ cols = df.columns.tolist()
 st.subheader("🧭 Map your columns")
 
 def pick(label, guess):
-    return st.selectbox(label, ["— none —"] + cols, index=(cols.index(guess)+1 if guess in cols else 0))
+    # Try multiple guesses in order of preference
+    guesses = {
+        "Email": ["Email", "email", "E-mail", "EMAIL"],
+        "Organisation": ["Organisation", "Organization", "organisation", "organization", "Organisation / SectorText"],
+        "Sector": ["Sector", "sector", "SECTOR"],
+        "MotivationText": ["MotivationText", "Motivation", "motivation", "MotivationText"],
+        "FunctionTitle": ["FunctionTitle", "Function", "function", "Position", "Job Title"],
+        "WeeklyTimeBand": ["WeeklyTimeBand", "TimeBand", "Time", "Weekly Time"],
+        "LanguageComfort": ["LanguageComfort", "Language", "language"],
+        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee"],
+        "AlumniReferral": ["AlumniReferral", "Alumni", "alumni", "Referral"],
+        "ApplicationDate": ["ApplicationDate", "Date", "date", "Timestamp"],
+    }
+    
+    # Get the list of guesses for this field
+    guess_list = guesses.get(guess, [guess])
+    
+    # Find the first match
+    default_idx = 0
+    for g in guess_list:
+        if g in cols:
+            default_idx = cols.index(g) + 1
+            break
+    
+    return st.selectbox(label, ["— none —"] + cols, index=default_idx)
 
 email_col = pick("Email (optional; for PID generation)", "Email")
 org_col = pick("Organisation / SectorText (optional)", "Organisation")
@@ -441,6 +465,7 @@ def get_time_points(x):
     if x in ["≥3h", ">=3h"]: return 10
     if x in ["2–3h", "2-3h"]: return 6
     if x in ["1–2h", "1-2h"]: return 3
+    if x == "<1h": return 0
     return 0
 
 work["_time_points"] = work["_time_band"].apply(get_time_points) if isinstance(work["_time_band"], pd.Series) else 0
