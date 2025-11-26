@@ -113,7 +113,8 @@ SECTOR_UPLIFT_DEFAULT = {
     "Other/Unclassified": 0,
 }
 
-WEEKLY_TIME_BANDS = ["<1h", "1–2h", "2–3h", "≥3h"]
+# Support both ASCII and Unicode variants
+WEEKLY_TIME_BANDS = ["<1h", "1–2h", "2–3h", "≥3h", "1-2h", "2-3h", ">=3h"]
 LANG_BANDS = ["Basic/With support", "Working", "Fluent"]
 
 # ---------------------------
@@ -183,9 +184,9 @@ def score_language_band(x):
     return 0
 
 def score_time_band(x):
-    if x == "≥3h": return 10
-    if x == "2–3h": return 6
-    if x == "1–2h": return 3
+    if x in ["≥3h", ">=3h"]: return 10
+    if x in ["2–3h", "2-3h"]: return 6
+    if x in ["1–2h", "1-2h"]: return 3
     return 0
 
 def label_band(val, admit_thr, priority_thr, sector, equity_reserve=False, equity_range=(50,59)):
@@ -238,15 +239,17 @@ st.write("Upload an **applications CSV** (UTF-8). Emails are immediately replace
 
 with st.expander("📄 Expected columns (you can map after upload)"):
     st.markdown("""
-**Minimum (map at least these):**
-- **Email** (unique applicant ID; will be hashed to PID)
+**Minimum required:**
 - **Organisation / SectorText** (text; used to infer sector if structured sector not present)
-- **MotivationText** (free text)
+
+**Recommended (optional):**
+- **Email** (unique applicant ID; will be hashed to PID) — if not provided, row-based IDs are generated
+- **MotivationText** (free text) — if not provided, motivation score = 0
 
 **Optional:**
 - **Sector** (structured dropdown if available)
 - **FunctionTitle**
-- **WeeklyTimeBand** (`<1h`, `1–2h`, `2–3h`, `≥3h`)
+- **WeeklyTimeBand** (`<1h`, `1-2h`, `2-3h`, `>=3h`)
 - **LanguageComfort** (`Basic/With support`, `Working`, `Fluent`)
 - **RefereeConfirmsFit** (`yes`/`no`)
 - **AlumniReferral** (`yes`/`no`)
@@ -313,10 +316,10 @@ st.subheader("🧭 Map your columns")
 def pick(label, guess):
     return st.selectbox(label, ["— none —"] + cols, index=(cols.index(guess)+1 if guess in cols else 0))
 
-email_col = pick("Email", "Email")
+email_col = pick("Email (optional; for PID generation)", "Email")
 org_col = pick("Organisation / SectorText", "Organisation")
 sector_col = pick("Sector (structured; optional)", "Sector")
-mot_col = pick("MotivationText", "MotivationText")
+mot_col = pick("MotivationText (optional)", "MotivationText")
 func_col = pick("FunctionTitle (optional)", "FunctionTitle")
 time_col = pick("WeeklyTimeBand (optional)", "WeeklyTimeBand")
 lang_col = pick("LanguageComfort (optional)", "LanguageComfort")
@@ -324,23 +327,37 @@ ref_col = pick("RefereeConfirmsFit (yes/no; optional)", "RefereeConfirmsFit")
 alm_col = pick("AlumniReferral (yes/no; optional)", "AlumniReferral")
 date_col = pick("ApplicationDate (optional; for dedup)", "ApplicationDate")
 
-if email_col == "— none —" or mot_col == "— none —" or org_col == "— none —":
-    st.error("Please map at least: Email, Organisation/SectorText, MotivationText.")
+# Only Organisation is required now
+if org_col == "— none —":
+    st.error("Please map at least: Organisation/SectorText.")
     st.stop()
+
+# Show warnings for unmapped recommended fields
+if email_col == "— none —":
+    st.warning("⚠️ No Email column mapped. Row-based PIDs will be generated (less reliable for deduplication).")
+if mot_col == "— none —":
+    st.warning("⚠️ No MotivationText column mapped. Motivation scores will be 0 for all applicants.")
 
 # ---------------------------
 # Force pseudonymization (IMMEDIATE)
 # ---------------------------
 work = df.copy()
 
-# Create PID from Email immediately
-emails_norm = work[email_col].map(normalize_email)
-pids = emails_norm.apply(hash_id)
-work.insert(0, "PID", pids)
+# Create PID from Email or row index
+if email_col != "— none —" and email_col in work.columns:
+    emails_norm = work[email_col].map(normalize_email)
+    pids = emails_norm.apply(hash_id)
+    work.insert(0, "PID", pids)
+    # Drop the raw email column to ensure it never appears in outputs
+    work.drop(columns=[email_col], inplace=True)
+else:
+    # Generate row-based PIDs
+    work.insert(0, "PID", [hash_id(f"row_{i}") for i in range(len(work))])
 
 # Optional: hash additional identifiers
 with st.expander("🔐 Optional: hash additional identifier columns"):
-    ident_cols = st.multiselect("Select any additional columns to hash (will be replaced by HASH_<col>)", [c for c in cols if c != email_col])
+    available_cols = [c for c in cols if c != email_col and c in work.columns]
+    ident_cols = st.multiselect("Select any additional columns to hash (will be replaced by HASH_<col>)", available_cols)
     for c in ident_cols:
         work[f"HASH_{c}"] = work[c].astype(str).apply(lambda v: hash_id(v))
         # Optionally drop the original column to reduce exposure:
@@ -348,14 +365,10 @@ with st.expander("🔐 Optional: hash additional identifier columns"):
         if drop_original:
             if c in work.columns: work.drop(columns=[c], inplace=True)
 
-# Drop the raw email column to ensure it never appears in outputs
-if email_col in work.columns:
-    work.drop(columns=[email_col], inplace=True)
-
 # ---------------------------
 # Deduplicate by PID (keep latest ApplicationDate if present)
 # ---------------------------
-if date_col != "— none —":
+if date_col != "— none —" and date_col in work.columns:
     work["_app_date"] = pd.to_datetime(work[date_col], errors="coerce")
     work = work.sort_values("_app_date").drop_duplicates(subset=["PID"], keep="last")
 else:
@@ -372,11 +385,18 @@ else:
 # ---------------------------
 # Heuristic motivation scores (0–10 each; auto)
 # ---------------------------
-mot_scores = work[mot_col].apply(rubric_heuristic_score)
-work["_mot_specificity"] = mot_scores.apply(lambda t: t[0])
-work["_mot_feasibility"] = mot_scores.apply(lambda t: t[1])
-work["_mot_relevance"] = mot_scores.apply(lambda t: t[2])
-work["_mot_total"] = work[["_mot_specificity","_mot_feasibility","_mot_relevance"]].sum(axis=1)
+if mot_col != "— none —" and mot_col in work.columns:
+    mot_scores = work[mot_col].apply(rubric_heuristic_score)
+    work["_mot_specificity"] = mot_scores.apply(lambda t: t[0])
+    work["_mot_feasibility"] = mot_scores.apply(lambda t: t[1])
+    work["_mot_relevance"] = mot_scores.apply(lambda t: t[2])
+    work["_mot_total"] = work[["_mot_specificity","_mot_feasibility","_mot_relevance"]].sum(axis=1)
+else:
+    # No motivation text - all zeros
+    work["_mot_specificity"] = 0
+    work["_mot_feasibility"] = 0
+    work["_mot_relevance"] = 0
+    work["_mot_total"] = 0
 
 # Scale to sidebar max
 work["_mot_scaled"] = (work["_mot_total"] / 30.0) * w_motivation
@@ -407,7 +427,7 @@ def function_points(x):
     return 0
 work["_func_points"] = work[func_col].apply(function_points) if func_col != "— none —" and func_col in work.columns else 0
 
-# Language & time
+# Language & time - support both ASCII and Unicode variants
 def map_band(val, valid):
     if not isinstance(val, str): return None
     v = val.strip()
@@ -415,7 +435,15 @@ def map_band(val, valid):
 
 work["_time_band"] = work[time_col].apply(lambda x: map_band(x, WEEKLY_TIME_BANDS)) if time_col != "— none —" and time_col in work.columns else None
 work["_lang_band"] = work[lang_col].apply(lambda x: map_band(x, LANG_BANDS)) if lang_col != "— none —" and lang_col in work.columns else None
-work["_time_points"] = work["_time_band"].apply(lambda x: { "≥3h":10,"2–3h":6,"1–2h":3 }.get(x,0)) if isinstance(work["_time_band"], pd.Series) else 0
+
+# Time points - support both ASCII and Unicode
+def get_time_points(x):
+    if x in ["≥3h", ">=3h"]: return 10
+    if x in ["2–3h", "2-3h"]: return 6
+    if x in ["1–2h", "1-2h"]: return 3
+    return 0
+
+work["_time_points"] = work["_time_band"].apply(get_time_points) if isinstance(work["_time_band"], pd.Series) else 0
 work["_lang_points"] = work["_lang_band"].apply(lambda x: { "Fluent":5,"Working":3 }.get(x,0)) if isinstance(work["_lang_band"], pd.Series) else 0
 
 # Cap
@@ -480,6 +508,10 @@ with tab_about:
     - **Immediately pseudonymizes** emails to PID (salted hash).  
     - Provides transparent components & suggested labels.
 
+    **Required fields**  
+    - Only **Organisation/SectorText** is mandatory.
+    - Email and MotivationText are recommended but optional.
+
     **Brand colors**  
     - Green `#78A22F` (Admit), Blue `#007C9E` (primary), Orange `#F58025` (Priority),  
       Yellow `#F8E71C` (Equity), Red `#D0021B` (alerts).
@@ -489,7 +521,3 @@ with tab_about:
     """)
 
 st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
-
-
-
-
