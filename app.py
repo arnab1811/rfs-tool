@@ -223,7 +223,7 @@ for k,v in SECTOR_UPLIFT_DEFAULT.items():
     sector_uplift[k] = st.sidebar.number_input(f"{k}", value=v, step=1)
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Privacy: Emails are hashed to PIDs immediately with a secret SALT. Outputs contain no emails.")
+st.sidebar.caption("Privacy: PIDs shown on screen. Downloaded CSV includes emails for local use.")
 
 # ---------------------------
 # Main – Upload & mapping
@@ -360,24 +360,27 @@ if org_col == "— none —":
     st.warning("⚠️ No Organisation/SectorText column mapped. Sector will default to 'Other/Unclassified' for all applicants.")
 
 # ---------------------------
-# Force pseudonymization (IMMEDIATE)
+# Force pseudonymization (IMMEDIATE) - but keep original for download
 # ---------------------------
 work = df.copy()
 
-# Create PID from Email or row index
+# Store original emails for download (before hashing)
 if email_col != "— none —" and email_col in work.columns:
+    work["_original_email"] = work[email_col].copy()  # Keep original for download
     emails_norm = work[email_col].map(normalize_email)
     pids = emails_norm.apply(hash_id)
     work.insert(0, "PID", pids)
-    # Drop the raw email column to ensure it never appears in outputs
+    # Drop the raw email column from display (but keep _original_email)
     work.drop(columns=[email_col], inplace=True)
 else:
+    work["_original_email"] = None  # No email available
     # Generate row-based PIDs
     work.insert(0, "PID", [hash_id(f"row_{i}") for i in range(len(work))])
 
 # Optional: hash additional identifiers
 with st.expander("🔐 Optional: hash additional identifier columns"):
-    available_cols = [c for c in cols if c != email_col and c in work.columns]
+    # Exclude internal columns from the list
+    available_cols = [c for c in cols if c != email_col and c in work.columns and not c.startswith("_")]
     ident_cols = st.multiselect("Select any additional columns to hash (will be replaced by HASH_<col>)", available_cols)
     for c in ident_cols:
         work[f"HASH_{c}"] = work[c].astype(str).apply(lambda v: hash_id(v))
@@ -504,14 +507,21 @@ pretty = work[out_cols].rename(columns={
 hash_cols = [c for c in work.columns if c.startswith("HASH_")]
 pretty = pd.concat([pretty, work[hash_cols]], axis=1)
 
-st.success(f"Scored {len(pretty)} applicants. (Emails replaced by PID)")
+st.success(f"Scored {len(pretty)} applicants. Screen shows PIDs; download includes emails.")
 tab_score, tab_summary, tab_about = st.tabs(["📊 Score", "📈 Summary", "ℹ️ About"])
 
 with tab_score:
     st.dataframe(pretty, use_container_width=True)
+    
+    # Create download version with original emails
+    download_df = pretty.copy()
+    # Add original emails from work dataframe (properly aligned after dedup)
+    if "_original_email" in work.columns:
+        download_df.insert(1, "Email", work["_original_email"].values)
+    
     csv_buf = io.StringIO()
-    pretty.to_csv(csv_buf, index=False)
-    st.download_button("⬇️ Download scored CSV (pseudonymized)",
+    download_df.to_csv(csv_buf, index=False)
+    st.download_button("⬇️ Download scored CSV (with emails)",
                        data=csv_buf.getvalue(), file_name="rfs_scored.csv", mime="text/csv")
 
 with tab_summary:
@@ -537,7 +547,8 @@ with tab_about:
     st.markdown("""
     **What this tool does**  
     - Scores applicants **only** on application-time fields.  
-    - **Immediately pseudonymizes** emails to PID (salted hash).  
+    - Displays PIDs on screen (salted hash) for privacy during review.
+    - Downloaded CSV includes original emails for local record-keeping.
     - Provides transparent components & suggested labels.
 
     **Field requirements**  
@@ -551,7 +562,9 @@ with tab_about:
       Yellow `#F8E71C` (Equity), Red `#D0021B` (alerts).
 
     **Privacy**  
-    - No raw emails in outputs. Keep SALT in Streamlit Secrets (Cloud) or `.streamlit/secrets.toml` (local).
+    - Screen display: PIDs only (salted hashes)
+    - Downloaded CSV: Includes original emails
+    - Configure SALT in `.streamlit/secrets.toml` (local) or Streamlit Cloud settings.
     """)
 
-st.caption("Privacy: Raw emails are dropped immediately. PIDs are salted hashes. Configure SALT via secrets.")
+st.caption("Privacy: PIDs shown on screen (salted hashes). Downloaded CSV includes original emails for local use.")
