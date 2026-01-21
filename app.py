@@ -1,6 +1,9 @@
 import io
 import re
+import base64
 import hashlib
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -14,24 +17,43 @@ st.set_page_config(
     layout="wide"
 )
 
-# ------------ Brand palette & CSS ------------
+# ------------ Brand palette ------------
 PALETTE = {
     "green":  "#78A22F",
     "blue":   "#007C9E",
     "orange": "#F58025",
     "yellow": "#F8E71C",
     "red":    "#D0021B",
-    "ink":    "#1F2A33",  # text
-    "bg2":    "#F7FBFC"   # soft background
+    "ink":    "#1F2A33",
+    "bg2":    "#F7FBFC"
 }
 
-LOGO_RIGHT_1 = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR9-coMALShPskHUwc_OBk4D6zfg01yV9aKAQ&s"
-LOGO_RIGHT_2 = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR5ECjot-_rVylRVh5TTAS6DpirJQ8-fB8bTA&s"
+# ---------------------------
+# Local logos (you added these to repo root)
+# ---------------------------
+APP_DIR = Path(__file__).resolve().parent
+LOGO1_PATH = APP_DIR / "logo1.png"
+LOGO2_PATH = APP_DIR / "logo2.png"
+
+def _img_to_b64(path: Path) -> str:
+    """
+    Read a local image and return base64 string.
+    Using base64 avoids hotlinking issues and works on Streamlit Cloud.
+    """
+    try:
+        b = path.read_bytes()
+        return base64.b64encode(b).decode("utf-8")
+    except Exception:
+        return ""
+
+LOGO1_B64 = _img_to_b64(LOGO1_PATH)
+LOGO2_B64 = _img_to_b64(LOGO2_PATH)
 
 def inject_css():
-    st.markdown(f"""
+    # NOTE: no f-string here -> normal CSS braces are safe.
+    st.markdown("""
     <style>
-      :root {{
+      :root {
         --green:  #78A22F;
         --blue:   #007C9E;
         --orange: #F58025;
@@ -39,65 +61,63 @@ def inject_css():
         --red:    #D0021B;
         --ink:    #1F2A33;
         --bg2:    #F7FBFC;
-      }}
+      }
 
-      /* Use Verdana for text, but DO NOT override icon/emoji fonts */
-      html, body, .stApp {{
+      html, body, .stApp {
         font-family: Verdana, Geneva, Arial, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
         color: var(--ink);
         -webkit-font-smoothing: antialiased;
-      }}
+      }
 
       /* Restore Material Icons ligature fonts so arrows/chevrons render as icons */
       .material-icons,
       .material-icons-outlined,
       .material-icons-round,
       .material-icons-sharp,
-      .material-icons-two-tone {{
+      .material-icons-two-tone {
         font-family: "Material Icons", "Material Icons Outlined", "Material Icons Round",
                      "Material Icons Sharp", "Material Icons Two Tone" !important;
         font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
         text-transform: none; display: inline-block; white-space: nowrap; word-wrap: normal;
         direction: ltr; -webkit-font-feature-settings: 'liga'; -webkit-font-smoothing: antialiased;
-      }}
+      }
 
-      /* Solid-color banner */
-      /* Solid-color banner */
-.app-banner {
-  padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
-  background: var(--green); color: #fff;
-}
-.app-banner-inner {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-}
-.app-banner-left h2 { margin: 0 0 4px 0; font-weight: 700; }
-.app-banner-left p  { margin: 0; opacity: .95; }
+      /* Banner */
+      .app-banner {
+        padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
+        background: var(--green); color: #fff;
+      }
+      .app-banner-inner {
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      }
+      .app-banner-left h2 { margin: 0 0 4px 0; font-weight: 700; }
+      .app-banner-left p  { margin: 0; opacity: .95; }
 
-.app-logos {
-  display: flex; align-items: center; gap: 10px;
-}
-.app-logos img {
-  height: 40px; width: auto;
-  background: rgba(255,255,255,0.95);
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
-}
+      .app-logos {
+        display: flex; align-items: center; gap: 10px;
+      }
+      .app-logos img {
+        height: 40px; width: auto;
+        background: rgba(255,255,255,0.95);
+        border-radius: 10px;
+        padding: 6px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+      }
 
-      .stButton > button, .stDownloadButton button {{
+      .stButton > button, .stDownloadButton button {
         border-radius: 10px; border: 1px solid var(--blue); background: var(--blue);
         color: #fff; font-weight: 700;
-      }}
-      .stButton > button:hover, .stDownloadButton button:hover {{ filter: brightness(0.92); }}
+      }
+      .stButton > button:hover, .stDownloadButton button:hover { filter: brightness(0.92); }
 
-      .tag {{ display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; margin-right:8px; }}
-      .tag-priority {{ background: var(--orange); color:#000; }}
-      .tag-admit    {{ background: var(--green);  color:#fff; }}
-      .tag-equity   {{ background: var(--yellow); color:#000; border:1px solid #D8C600; }}
-      .tag-reserve  {{ background: var(--bg2);    color: var(--ink); border:1px solid #CFDCE4; }}
+      .tag { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; margin-right:8px; }
+      .tag-priority { background: var(--orange); color:#000; }
+      .tag-admit    { background: var(--green);  color:#fff; }
+      .tag-equity   { background: var(--yellow); color:#000; border:1px solid #D8C600; }
+      .tag-reserve  { background: var(--bg2);    color: var(--ink); border:1px solid #CFDCE4; }
 
-      .stDataFrame tbody td, .stDataFrame thead th {{ font-size: 13px; }}
-      h1,h2,h3 {{ letter-spacing:.2px; }}
+      .stDataFrame tbody td, .stDataFrame thead th { font-size: 13px; }
+      h1,h2,h3 { letter-spacing:.2px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -131,7 +151,6 @@ SECTOR_UPLIFT_DEFAULT = {
     "Other/Unclassified": 0,
 }
 
-# Support both ASCII and Unicode variants
 WEEKLY_TIME_BANDS = ["<1h", "1–2h", "2–3h", "≥3h", "1-2h", "2-3h", ">=3h"]
 LANG_BANDS = ["Basic/With support", "Working", "Fluent"]
 
@@ -144,9 +163,6 @@ def normalize_email(x):
     return str(x).strip().lower()
 
 def hash_id(value: str) -> str:
-    """
-    Returns a stable SHA-256 hex digest of SALT + value (first 16 chars shown for readability).
-    """
     v = (SALT + value).encode("utf-8")
     return hashlib.sha256(v).hexdigest()[:16]
 
@@ -171,7 +187,7 @@ def rubric_heuristic_score(text: str, length_targets=(200, 300)):
     t = text.strip()
     words = len(t.split())
 
-    # Tighten: ultra-short motivations get zero (reduces gaming / low-effort entries)
+    # tighten: very short motivations get zero (cuts noise/gaming)
     if words < 30:
         return (0, 0, 0)
 
@@ -201,6 +217,7 @@ def rubric_heuristic_score(text: str, length_targets=(200, 300)):
     if has_data: rel += 2
     if "student" in t.lower() or "farmer" in t.lower(): rel += 1
     rel = min(rel, 10)
+
     return (spec, feas, rel)
 
 def label_band(val, admit_thr, priority_thr, sector, equity_reserve=False, equity_range=(50, 59)):
@@ -213,27 +230,21 @@ def label_band(val, admit_thr, priority_thr, sector, equity_reserve=False, equit
     return "Reserve"
 
 def normalize_time_value(v):
-    """
-    Tighten: normalize common Unicode/format variants so time points don't silently drop to 0.
-    """
     if not isinstance(v, str):
         return v
     x = v.strip()
     x = x.replace("–", "-").replace("—", "-")
     x = x.replace("≥", ">=")
-    # squash whitespace (handles ">= 3h" etc)
     x_compact = re.sub(r"\s+", "", x.lower())
 
     if x_compact in ["<1h", "<1hour", "<1hrs", "<1hr"]:
         return "<1h"
-    if x_compact in ["1-2h", "1-2hours", "1-2hrs", "1-2hr", "1–2h"]:
+    if x_compact in ["1-2h", "1-2hours", "1-2hrs", "1-2hr"]:
         return "1-2h"
-    if x_compact in ["2-3h", "2-3hours", "2-3hrs", "2-3hr", "2–3h"]:
+    if x_compact in ["2-3h", "2-3hours", "2-3hrs", "2-3hr"]:
         return "2-3h"
     if x_compact in [">=3h", ">=3hours", ">=3hrs", ">=3hr"]:
         return ">=3h"
-
-    # if already one of the accepted labels (incl unicode ones), return as-is
     return x
 
 def map_band(val, valid):
@@ -243,20 +254,16 @@ def map_band(val, valid):
     return v if v in valid else None
 
 def get_time_points(x):
-    if x in ["≥3h", ">=3h"]:
-        return 10
-    if x in ["2–3h", "2-3h"]:
-        return 6
-    if x in ["1–2h", "1-2h"]:
-        return 3
-    if x == "<1h":
-        return 0
+    if x in ["≥3h", ">=3h"]: return 10
+    if x in ["2–3h", "2-3h"]: return 6
+    if x in ["1–2h", "1-2h"]: return 3
+    if x == "<1h": return 0
     return 0
 
 def yes_no_points(x, cap):
     """
-    Tighten: robustly score yes/no, and treat *any non-empty free-text* as "yes",
-    unless it clearly indicates "no". Prevents silent zeros when a recommender name/email is mapped.
+    Treat any non-empty free text as YES unless it clearly indicates NO.
+    Prevents silent zeros when fields contain a recommender/referral name/email.
     """
     if pd.isna(x) or x is None:
         return 0
@@ -272,7 +279,6 @@ def yes_no_points(x, cap):
     if any(text == p or text.startswith(p + " ") or text.startswith(p + ",") for p in yes_prefixes):
         return cap
 
-    # any other non-empty value counts as yes (e.g., "John Smith, Ministry of ...")
     return cap
 
 # ---------------------------
@@ -305,8 +311,14 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Privacy: PIDs shown on screen. Downloaded CSV includes emails for local use.")
 
 # ---------------------------
-# Main – Upload & mapping
+# Banner with local logos
 # ---------------------------
+logos_html = ""
+if LOGO1_B64:
+    logos_html += f'<img src="data:image/png;base64,{LOGO1_B64}" alt="Logo 1">'
+if LOGO2_B64:
+    logos_html += f'<img src="data:image/png;base64,{LOGO2_B64}" alt="Logo 2">'
+
 st.markdown(
     f"""
     <div class="app-banner">
@@ -316,8 +328,7 @@ st.markdown(
           <p>Pseudonymized shortlisting for fair, transparent intake – Verdana UI & NFP palette.</p>
         </div>
         <div class="app-logos">
-          <img src="{LOGO_RIGHT_1}" alt="Logo 1">
-          <img src="{LOGO_RIGHT_2}" alt="Logo 2">
+          {logos_html}
         </div>
       </div>
     </div>
@@ -325,75 +336,56 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ---------------------------
+# Main – Upload & mapping
+# ---------------------------
 st.title("Recruitment Fit Score (RFS) – Pseudonymized Reviewer Tool")
-st.write("Upload an **applications CSV** (UTF-8). Emails are immediately replaced with `PID` (hashed).")
+st.write("Upload an **applications CSV** (UTF-8) or **XLSX**. Emails are immediately replaced with `PID` (hashed).")
 
 with st.expander("📄 Expected columns (you can map after upload)"):
     st.markdown("""
 **All fields are optional.** Map what you have:
 
 **Recommended:**
-- **Email** (unique applicant ID; will be hashed to PID) — if not provided, row-based IDs are generated
-- **Organisation / SectorText** (text; used to infer sector) — if not provided, sector defaults to 'Other/Unclassified'
-- **MotivationText** (free text) — if not provided, motivation score = 0
+- **Email** (unique applicant ID; will be hashed to PID)
+- **Organisation / SectorText** (text; used to infer sector)
+- **MotivationText** (free text)
 
 **Optional:**
 - **Sector** (structured dropdown if available)
 - **FunctionTitle**
 - **WeeklyTimeBand** (`<1h`, `1-2h`, `2-3h`, `>=3h`)
 - **LanguageComfort** (`Basic/With support`, `Working`, `Fluent`)
-- **RefereeConfirmsFit** (`yes`/`no`) or **free text** (name/email) — counts as "yes" unless explicitly "no"
-- **AlumniReferral** (`yes`/`no`) or **free text** — counts as "yes" unless explicitly "no"
+- **RefereeConfirmsFit** (`yes`/`no` OR free text) — free text counts as "yes" unless explicitly "no"
+- **AlumniReferral** (`yes`/`no` OR free text) — free text counts as "yes" unless explicitly "no"
 - **ApplicationDate** (for dedup)
 """)
 
-import csv  # kept (harmless) to match your original structure
-
 def read_uploaded_table(uploaded_file) -> pd.DataFrame:
-    """
-    Robustly read user uploads:
-    - .xlsx via openpyxl
-    - .csv with multiple encodings and delimiters
-    """
     name = (uploaded_file.name or "").lower()
 
-    # Excel first
     if name.endswith(".xlsx") or name.endswith(".xls"):
-        try:
-            return pd.read_excel(uploaded_file, engine="openpyxl")
-        except Exception as e:
-            st.error(f"Could not read Excel file: {e}")
-            raise
+        return pd.read_excel(uploaded_file, engine="openpyxl")
 
-    # Otherwise treat as CSV (try encodings + sniff delimiter)
     raw_bytes = uploaded_file.getvalue()
-
-    # Try a few encodings
     encodings = ["utf-8", "utf-8-sig", "cp1252", "latin1"]
+
     for enc in encodings:
         try:
-            # First, let pandas infer the delimiter (python engine supports sep=None)
             return pd.read_csv(io.BytesIO(raw_bytes), encoding=enc, sep=None, engine="python")
         except UnicodeDecodeError:
             continue
         except Exception:
-            # Try common delimiters explicitly
             for sep in [",", ";", "\t", "|"]:
                 try:
                     return pd.read_csv(io.BytesIO(raw_bytes), encoding=enc, sep=sep)
                 except Exception:
                     pass
 
-    # Last resort: decode with replacement to avoid crash
     text = raw_bytes.decode("utf-8", errors="replace")
-    try:
-        return pd.read_csv(io.StringIO(text), sep=None, engine="python")
-    except Exception as e:
-        st.error("Unable to read the file. Please export as CSV (UTF-8) or XLSX and try again.")
-        raise e
+    return pd.read_csv(io.StringIO(text), sep=None, engine="python")
 
 uploaded = st.file_uploader("Upload applications file", type=["csv", "xlsx"])
-
 if uploaded is None:
     st.info("Tip: test with the sample file in the repo.")
     st.stop()
@@ -403,42 +395,39 @@ cols = df.columns.tolist()
 
 st.subheader("🧭 Map your columns")
 
-def pick(label, guess):
+def pick(label, guess_key):
     guesses = {
         "Email": ["Email", "email", "E-mail", "EMAIL"],
         "Organisation": ["Organisation", "Organization", "organisation", "organization", "Organisation / SectorText"],
         "Sector": ["Sector", "sector", "SECTOR"],
-        "MotivationText": ["MotivationText", "Motivation", "motivation", "MotivationText"],
+        "MotivationText": ["MotivationText", "Motivation", "motivation"],
         "FunctionTitle": ["FunctionTitle", "Function", "function", "Position", "Job Title"],
         "WeeklyTimeBand": ["WeeklyTimeBand", "TimeBand", "Time", "Weekly Time"],
         "LanguageComfort": ["LanguageComfort", "Language", "language"],
-        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee", "RefereeConfirms", "Recommendation", "Recommender"],
+        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee", "Recommendation", "Recommender"],
         "AlumniReferral": ["AlumniReferral", "Alumni", "alumni", "Referral", "AlumniRef"],
         "ApplicationDate": ["ApplicationDate", "Date", "date", "Timestamp"],
     }
 
-    guess_list = guesses.get(guess, [guess])
-
+    guess_list = guesses.get(guess_key, [guess_key])
     default_idx = 0
     for g in guess_list:
         if g in cols:
             default_idx = cols.index(g) + 1
             break
-
     return st.selectbox(label, ["— none —"] + cols, index=default_idx)
 
 email_col = pick("Email (optional; for PID generation)", "Email")
-org_col = pick("Organisation / SectorText (optional)", "Organisation")
-sector_col = pick("Sector (structured; optional)", "Sector")
-mot_col = pick("MotivationText (optional)", "MotivationText")
-func_col = pick("FunctionTitle (optional)", "FunctionTitle")
-time_col = pick("WeeklyTimeBand (optional)", "WeeklyTimeBand")
-lang_col = pick("LanguageComfort (optional)", "LanguageComfort")
-ref_col = pick("RefereeConfirmsFit (yes/no or free text; optional)", "RefereeConfirmsFit")
-alm_col = pick("AlumniReferral (yes/no or free text; optional)", "AlumniReferral")
-date_col = pick("ApplicationDate (optional; for dedup)", "ApplicationDate")
+org_col   = pick("Organisation / SectorText (optional)", "Organisation")
+sector_col= pick("Sector (structured; optional)", "Sector")
+mot_col   = pick("MotivationText (optional)", "MotivationText")
+func_col  = pick("FunctionTitle (optional)", "FunctionTitle")
+time_col  = pick("WeeklyTimeBand (optional)", "WeeklyTimeBand")
+lang_col  = pick("LanguageComfort (optional)", "LanguageComfort")
+ref_col   = pick("RefereeConfirmsFit (yes/no or free text; optional)", "RefereeConfirmsFit")
+alm_col   = pick("AlumniReferral (yes/no or free text; optional)", "AlumniReferral")
+date_col  = pick("ApplicationDate (optional; for dedup)", "ApplicationDate")
 
-# No fields are strictly required now - show warnings for unmapped recommended fields
 if email_col == "— none —":
     st.warning("⚠️ No Email column mapped. Row-based PIDs will be generated (less reliable for deduplication).")
 if mot_col == "— none —":
@@ -447,24 +436,19 @@ if org_col == "— none —":
     st.warning("⚠️ No Organisation/SectorText column mapped. Sector will default to 'Other/Unclassified' for all applicants.")
 
 # ---------------------------
-# Force pseudonymization (IMMEDIATE) - but keep original for download
+# Force pseudonymization - keep original for download
 # ---------------------------
 work = df.copy()
 
-# Store original emails for download (before hashing)
 if email_col != "— none —" and email_col in work.columns:
-    work["_original_email"] = work[email_col].copy()  # Keep original for download
+    work["_original_email"] = work[email_col].copy()
     emails_norm = work[email_col].map(normalize_email)
-    pids = emails_norm.apply(hash_id)
-    work.insert(0, "PID", pids)
-    # Drop the raw email column from display (but keep _original_email)
+    work.insert(0, "PID", emails_norm.apply(hash_id))
     work.drop(columns=[email_col], inplace=True)
 else:
-    work["_original_email"] = None  # No email available
-    # Generate row-based PIDs
+    work["_original_email"] = None
     work.insert(0, "PID", [hash_id(f"row_{i}") for i in range(len(work))])
 
-# Optional: hash additional identifiers
 with st.expander("🔐 Optional: hash additional identifier columns"):
     available_cols = [c for c in cols if c != email_col and c in work.columns and not c.startswith("_")]
     ident_cols = st.multiselect("Select any additional columns to hash (will be replaced by HASH_<col>)", available_cols)
@@ -475,7 +459,7 @@ with st.expander("🔐 Optional: hash additional identifier columns"):
             work.drop(columns=[c], inplace=True)
 
 # ---------------------------
-# Deduplicate by PID (keep latest ApplicationDate if present)
+# Deduplicate by PID
 # ---------------------------
 if date_col != "— none —" and date_col in work.columns:
     work["_app_date"] = pd.to_datetime(work[date_col], errors="coerce")
@@ -494,13 +478,13 @@ else:
     work["_sector"] = "Other/Unclassified"
 
 # ---------------------------
-# Heuristic motivation scores (0–10 each; auto)
+# Motivation scores
 # ---------------------------
 if mot_col != "— none —" and mot_col in work.columns:
     mot_scores = work[mot_col].apply(rubric_heuristic_score)
     work["_mot_specificity"] = mot_scores.apply(lambda t: t[0])
     work["_mot_feasibility"] = mot_scores.apply(lambda t: t[1])
-    work["_mot_relevance"] = mot_scores.apply(lambda t: t[2])
+    work["_mot_relevance"]   = mot_scores.apply(lambda t: t[2])
     work["_mot_total"] = work[["_mot_specificity", "_mot_feasibility", "_mot_relevance"]].sum(axis=1)
 else:
     work["_mot_specificity"] = 0
@@ -508,7 +492,6 @@ else:
     work["_mot_relevance"] = 0
     work["_mot_total"] = 0
 
-# Scale to sidebar max
 work["_mot_scaled"] = (work["_mot_total"] / 30.0) * w_motivation
 work["_mot_scaled"] = work["_mot_scaled"].clip(lower=0, upper=w_motivation)
 
@@ -519,7 +502,7 @@ def sector_points(s):
 
 work["_sector_points"] = work["_sector"].map(sector_points).clip(0, w_sector)
 
-# Referee & Alumni (tightened yes/no detection + free-text treated as yes)
+# Referee + Alumni (robust)
 work["_ref_points"] = (
     work[ref_col].apply(lambda x: yes_no_points(x, w_referee))
     if ref_col != "— none —" and ref_col in work.columns else 0
@@ -529,7 +512,7 @@ work["_alm_points"] = (
     if alm_col != "— none —" and alm_col in work.columns else 0
 )
 
-# Function relevance (simple keyword heuristic)
+# Function relevance
 def function_points(x):
     if not isinstance(x, str):
         return 0
@@ -547,7 +530,7 @@ work["_func_points"] = (
     if func_col != "— none —" and func_col in work.columns else 0
 )
 
-# Language & time - support both ASCII and Unicode variants (tightened normalization for time)
+# Time & language
 work["_time_band"] = (
     work[time_col].apply(lambda x: map_band(normalize_time_value(x), WEEKLY_TIME_BANDS))
     if time_col != "— none —" and time_col in work.columns else None
@@ -560,7 +543,6 @@ work["_lang_band"] = (
 work["_time_points"] = work["_time_band"].apply(get_time_points) if isinstance(work["_time_band"], pd.Series) else 0
 work["_lang_points"] = work["_lang_band"].apply(lambda x: {"Fluent": 5, "Working": 3}.get(x, 0)) if isinstance(work["_lang_band"], pd.Series) else 0
 
-# Cap
 work["_time_points"] = np.minimum(work["_time_points"], w_time) if isinstance(work["_time_points"], pd.Series) else 0
 work["_lang_points"] = np.minimum(work["_lang_points"], w_lang) if isinstance(work["_lang_points"], pd.Series) else 0
 
@@ -568,7 +550,6 @@ work["_lang_points"] = np.minimum(work["_lang_points"], w_lang) if isinstance(wo
 rfs_cols = ["_mot_scaled", "_sector_points", "_ref_points", "_func_points", "_time_points", "_lang_points", "_alm_points"]
 work["_RFS"] = work[rfs_cols].sum(axis=1).round(2)
 
-# Decision
 work["_label"] = work.apply(
     lambda r: label_band(
         r["_RFS"],
@@ -596,7 +577,6 @@ pretty = work[out_cols].rename(columns={
     "_alm_points": "AlumniPts"
 })
 
-# Append any HASH_* columns (but never raw identifiers)
 hash_cols = [c for c in work.columns if c.startswith("HASH_")]
 pretty = pd.concat([pretty, work[hash_cols]], axis=1)
 
@@ -606,17 +586,15 @@ tab_score, tab_summary, tab_about = st.tabs(["📊 Score", "📈 Summary", "ℹ�
 with tab_score:
     st.dataframe(pretty, use_container_width=True)
 
-    # Tighten: diagnostics so you spot all-"no" columns instantly
     with st.expander("🧪 Diagnostics (value counts)"):
         for c in [ref_col, alm_col, time_col, lang_col]:
             if c != "— none —" and c in work.columns:
                 st.write(f"**{c}**")
                 st.write(work[c].astype(str).str.strip().str.lower().value_counts(dropna=False))
 
-    # Create download version with original emails
     download_df = pretty.copy()
     if "_original_email" in work.columns:
-        download_df.insert(1, "Email", work["_original_email"].values)
+        download_df.insert(1, "Email", work.loc[pretty.index, "_original_email"].values)
 
     csv_buf = io.StringIO()
     download_df.to_csv(csv_buf, index=False)
@@ -651,17 +629,7 @@ with tab_about:
     - Scores applicants **only** on application-time fields.  
     - Displays PIDs on screen (salted hash) for privacy during review.
     - Downloaded CSV includes original emails for local record-keeping.
-    - Provides transparent components & suggested labels.
-
-    **Field requirements**  
-    - **All fields are optional** — map what you have available.
-    - Missing Email → row-based PIDs generated
-    - Missing MotivationText → motivation score = 0
-    - Missing Organisation → sector defaults to 'Other/Unclassified'
-
-    **Brand colors**  
-    - Green `#78A22F` (Admit), Blue `#007C9E` (primary), Orange `#F58025` (Priority),  
-      Yellow `#F8E71C` (Equity), Red `#D0021B` (alerts).
+    - Uses robust handling for referee/referral fields: free text counts as "yes" unless explicitly "no".
 
     **Privacy**  
     - Screen display: PIDs only (salted hashes)
