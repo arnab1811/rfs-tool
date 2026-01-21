@@ -13,6 +13,7 @@ st.set_page_config(
     page_icon="✅",
     layout="wide"
 )
+
 # ------------ Brand palette & CSS ------------
 PALETTE = {
     "green":  "#78A22F",
@@ -23,6 +24,9 @@ PALETTE = {
     "ink":    "#1F2A33",  # text
     "bg2":    "#F7FBFC"   # soft background
 }
+
+LOGO_RIGHT_1 = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR9-coMALShPskHUwc_OBk4D6zfg01yV9aKAQ&s"
+LOGO_RIGHT_2 = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR5ECjot-_rVylRVh5TTAS6DpirJQ8-fB8bTA&s"
 
 def inject_css():
     st.markdown(f"""
@@ -58,12 +62,27 @@ def inject_css():
       }}
 
       /* Solid-color banner */
-      .app-banner {{
-        padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
-        background: var(--green); color: #fff;  /* or change to var(--blue) */
-      }}
-      .app-banner h2 {{ margin: 0 0 4px 0; font-weight: 700; }}
-      .app-banner p  {{ margin: 0; opacity: .95; }}
+      /* Solid-color banner */
+.app-banner {
+  padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
+  background: var(--green); color: #fff;
+}
+.app-banner-inner {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.app-banner-left h2 { margin: 0 0 4px 0; font-weight: 700; }
+.app-banner-left p  { margin: 0; opacity: .95; }
+
+.app-logos {
+  display: flex; align-items: center; gap: 10px;
+}
+.app-logos img {
+  height: 40px; width: auto;
+  background: rgba(255,255,255,0.95);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
+}
 
       .stButton > button, .stDownloadButton button {{
         border-radius: 10px; border: 1px solid var(--blue); background: var(--blue);
@@ -81,7 +100,6 @@ def inject_css():
       h1,h2,h3 {{ letter-spacing:.2px; }}
     </style>
     """, unsafe_allow_html=True)
-
 
 # ---------------------------
 # Required secret salt
@@ -121,7 +139,8 @@ LANG_BANDS = ["Basic/With support", "Working", "Fluent"]
 # Helpers
 # ---------------------------
 def normalize_email(x):
-    if pd.isna(x): return ""
+    if pd.isna(x):
+        return ""
     return str(x).strip().lower()
 
 def hash_id(value: str) -> str:
@@ -148,8 +167,14 @@ def org_to_sector(org_text: str) -> str:
 def rubric_heuristic_score(text: str, length_targets=(200, 300)):
     if not isinstance(text, str) or text.strip() == "":
         return (0, 0, 0)
+
     t = text.strip()
     words = len(t.split())
+
+    # Tighten: ultra-short motivations get zero (reduces gaming / low-effort entries)
+    if words < 30:
+        return (0, 0, 0)
+
     has_numbers = bool(re.search(r"\b\d+\b", t))
     has_when = any(w in t.lower() for w in ["week", "month", "timeline", "plan", "schedule"])
     has_where = any(w in t.lower() for w in ["district", "province", "country", "region", "university", "ministry"])
@@ -178,23 +203,77 @@ def rubric_heuristic_score(text: str, length_targets=(200, 300)):
     rel = min(rel, 10)
     return (spec, feas, rel)
 
-def score_language_band(x):
-    if x == "Fluent": return 5
-    if x == "Working": return 3
-    return 0
-
-def score_time_band(x):
-    if x in ["≥3h", ">=3h"]: return 10
-    if x in ["2–3h", "2-3h"]: return 6
-    if x in ["1–2h", "1-2h"]: return 3
-    return 0
-
-def label_band(val, admit_thr, priority_thr, sector, equity_reserve=False, equity_range=(50,59)):
-    if val >= priority_thr: return "Priority"
-    if val >= admit_thr: return "Admit"
-    if equity_reserve and sector=="Farmer Org" and equity_range[0] <= val <= equity_range[1]:
+def label_band(val, admit_thr, priority_thr, sector, equity_reserve=False, equity_range=(50, 59)):
+    if val >= priority_thr:
+        return "Priority"
+    if val >= admit_thr:
+        return "Admit"
+    if equity_reserve and sector == "Farmer Org" and equity_range[0] <= val <= equity_range[1]:
         return "Reserve (Equity)"
     return "Reserve"
+
+def normalize_time_value(v):
+    """
+    Tighten: normalize common Unicode/format variants so time points don't silently drop to 0.
+    """
+    if not isinstance(v, str):
+        return v
+    x = v.strip()
+    x = x.replace("–", "-").replace("—", "-")
+    x = x.replace("≥", ">=")
+    # squash whitespace (handles ">= 3h" etc)
+    x_compact = re.sub(r"\s+", "", x.lower())
+
+    if x_compact in ["<1h", "<1hour", "<1hrs", "<1hr"]:
+        return "<1h"
+    if x_compact in ["1-2h", "1-2hours", "1-2hrs", "1-2hr", "1–2h"]:
+        return "1-2h"
+    if x_compact in ["2-3h", "2-3hours", "2-3hrs", "2-3hr", "2–3h"]:
+        return "2-3h"
+    if x_compact in [">=3h", ">=3hours", ">=3hrs", ">=3hr"]:
+        return ">=3h"
+
+    # if already one of the accepted labels (incl unicode ones), return as-is
+    return x
+
+def map_band(val, valid):
+    if not isinstance(val, str):
+        return None
+    v = val.strip()
+    return v if v in valid else None
+
+def get_time_points(x):
+    if x in ["≥3h", ">=3h"]:
+        return 10
+    if x in ["2–3h", "2-3h"]:
+        return 6
+    if x in ["1–2h", "1-2h"]:
+        return 3
+    if x == "<1h":
+        return 0
+    return 0
+
+def yes_no_points(x, cap):
+    """
+    Tighten: robustly score yes/no, and treat *any non-empty free-text* as "yes",
+    unless it clearly indicates "no". Prevents silent zeros when a recommender name/email is mapped.
+    """
+    if pd.isna(x) or x is None:
+        return 0
+    text = str(x).strip().lower()
+    if not text:
+        return 0
+
+    no_prefixes = ["no", "none", "n/a", "na", "not applicable", "0"]
+    if any(text == p or text.startswith(p + " ") or text.startswith(p + ",") for p in no_prefixes):
+        return 0
+
+    yes_prefixes = ["yes", "y", "true", "1", "ja", "oui", "si"]
+    if any(text == p or text.startswith(p + " ") or text.startswith(p + ",") for p in yes_prefixes):
+        return cap
+
+    # any other non-empty value counts as yes (e.g., "John Smith, Ministry of ...")
+    return cap
 
 # ---------------------------
 # Sidebar – Configuration
@@ -219,7 +298,7 @@ w_alumni = st.sidebar.slider("Alumni/referral bonus (max)", 0, 10, 5)
 st.sidebar.markdown("---")
 st.sidebar.subheader("Sector uplift values")
 sector_uplift = {}
-for k,v in SECTOR_UPLIFT_DEFAULT.items():
+for k, v in SECTOR_UPLIFT_DEFAULT.items():
     sector_uplift[k] = st.sidebar.number_input(f"{k}", value=v, step=1)
 
 st.sidebar.markdown("---")
@@ -229,8 +308,20 @@ st.sidebar.caption("Privacy: PIDs shown on screen. Downloaded CSV includes email
 # Main – Upload & mapping
 # ---------------------------
 st.markdown(
-    '<div class="app-banner"><h2>Recruitment Fit Score (RFS)</h2>'
-    '<p>Pseudonymized shortlisting for fair, transparent intake – Verdana UI & NFP palette.</p></div>',
+    f"""
+    <div class="app-banner">
+      <div class="app-banner-inner">
+        <div class="app-banner-left">
+          <h2>Recruitment Fit Score (RFS)</h2>
+          <p>Pseudonymized shortlisting for fair, transparent intake – Verdana UI & NFP palette.</p>
+        </div>
+        <div class="app-logos">
+          <img src="{LOGO_RIGHT_1}" alt="Logo 1">
+          <img src="{LOGO_RIGHT_2}" alt="Logo 2">
+        </div>
+      </div>
+    </div>
+    """,
     unsafe_allow_html=True
 )
 
@@ -251,12 +342,12 @@ with st.expander("📄 Expected columns (you can map after upload)"):
 - **FunctionTitle**
 - **WeeklyTimeBand** (`<1h`, `1-2h`, `2-3h`, `>=3h`)
 - **LanguageComfort** (`Basic/With support`, `Working`, `Fluent`)
-- **RefereeConfirmsFit** (`yes`/`no`)
-- **AlumniReferral** (`yes`/`no`)
+- **RefereeConfirmsFit** (`yes`/`no`) or **free text** (name/email) — counts as "yes" unless explicitly "no"
+- **AlumniReferral** (`yes`/`no`) or **free text** — counts as "yes" unless explicitly "no"
 - **ApplicationDate** (for dedup)
 """)
 
-import csv
+import csv  # kept (harmless) to match your original structure
 
 def read_uploaded_table(uploaded_file) -> pd.DataFrame:
     """
@@ -292,7 +383,6 @@ def read_uploaded_table(uploaded_file) -> pd.DataFrame:
                     return pd.read_csv(io.BytesIO(raw_bytes), encoding=enc, sep=sep)
                 except Exception:
                     pass
-            # move to next encoding
 
     # Last resort: decode with replacement to avoid crash
     text = raw_bytes.decode("utf-8", errors="replace")
@@ -314,7 +404,6 @@ cols = df.columns.tolist()
 st.subheader("🧭 Map your columns")
 
 def pick(label, guess):
-    # Try multiple guesses in order of preference
     guesses = {
         "Email": ["Email", "email", "E-mail", "EMAIL"],
         "Organisation": ["Organisation", "Organization", "organisation", "organization", "Organisation / SectorText"],
@@ -323,21 +412,19 @@ def pick(label, guess):
         "FunctionTitle": ["FunctionTitle", "Function", "function", "Position", "Job Title"],
         "WeeklyTimeBand": ["WeeklyTimeBand", "TimeBand", "Time", "Weekly Time"],
         "LanguageComfort": ["LanguageComfort", "Language", "language"],
-        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee", "RefereeConfirms"],
+        "RefereeConfirmsFit": ["RefereeConfirmsFit", "Referee", "referee", "RefereeConfirms", "Recommendation", "Recommender"],
         "AlumniReferral": ["AlumniReferral", "Alumni", "alumni", "Referral", "AlumniRef"],
         "ApplicationDate": ["ApplicationDate", "Date", "date", "Timestamp"],
     }
-    
-    # Get the list of guesses for this field
+
     guess_list = guesses.get(guess, [guess])
-    
-    # Find the first match
+
     default_idx = 0
     for g in guess_list:
         if g in cols:
             default_idx = cols.index(g) + 1
             break
-    
+
     return st.selectbox(label, ["— none —"] + cols, index=default_idx)
 
 email_col = pick("Email (optional; for PID generation)", "Email")
@@ -347,8 +434,8 @@ mot_col = pick("MotivationText (optional)", "MotivationText")
 func_col = pick("FunctionTitle (optional)", "FunctionTitle")
 time_col = pick("WeeklyTimeBand (optional)", "WeeklyTimeBand")
 lang_col = pick("LanguageComfort (optional)", "LanguageComfort")
-ref_col = pick("RefereeConfirmsFit (yes/no; optional)", "RefereeConfirmsFit")
-alm_col = pick("AlumniReferral (yes/no; optional)", "AlumniReferral")
+ref_col = pick("RefereeConfirmsFit (yes/no or free text; optional)", "RefereeConfirmsFit")
+alm_col = pick("AlumniReferral (yes/no or free text; optional)", "AlumniReferral")
 date_col = pick("ApplicationDate (optional; for dedup)", "ApplicationDate")
 
 # No fields are strictly required now - show warnings for unmapped recommended fields
@@ -379,15 +466,13 @@ else:
 
 # Optional: hash additional identifiers
 with st.expander("🔐 Optional: hash additional identifier columns"):
-    # Exclude internal columns from the list
     available_cols = [c for c in cols if c != email_col and c in work.columns and not c.startswith("_")]
     ident_cols = st.multiselect("Select any additional columns to hash (will be replaced by HASH_<col>)", available_cols)
     for c in ident_cols:
         work[f"HASH_{c}"] = work[c].astype(str).apply(lambda v: hash_id(v))
-        # Optionally drop the original column to reduce exposure:
         drop_original = st.checkbox(f"Drop original '{c}' after hashing", value=True, key=f"drop_{c}")
-        if drop_original:
-            if c in work.columns: work.drop(columns=[c], inplace=True)
+        if drop_original and c in work.columns:
+            work.drop(columns=[c], inplace=True)
 
 # ---------------------------
 # Deduplicate by PID (keep latest ApplicationDate if present)
@@ -406,7 +491,6 @@ if sector_col != "— none —" and sector_col in work.columns:
 elif org_col != "— none —" and org_col in work.columns:
     work["_sector"] = work[org_col].apply(org_to_sector)
 else:
-    # No sector or org column - default all to Other/Unclassified
     work["_sector"] = "Other/Unclassified"
 
 # ---------------------------
@@ -417,9 +501,8 @@ if mot_col != "— none —" and mot_col in work.columns:
     work["_mot_specificity"] = mot_scores.apply(lambda t: t[0])
     work["_mot_feasibility"] = mot_scores.apply(lambda t: t[1])
     work["_mot_relevance"] = mot_scores.apply(lambda t: t[2])
-    work["_mot_total"] = work[["_mot_specificity","_mot_feasibility","_mot_relevance"]].sum(axis=1)
+    work["_mot_total"] = work[["_mot_specificity", "_mot_feasibility", "_mot_relevance"]].sum(axis=1)
 else:
-    # No motivation text - all zeros
     work["_mot_specificity"] = 0
     work["_mot_feasibility"] = 0
     work["_mot_relevance"] = 0
@@ -433,74 +516,84 @@ work["_mot_scaled"] = work["_mot_scaled"].clip(lower=0, upper=w_motivation)
 def sector_points(s):
     s_clean = s if s in sector_uplift else "Other/Unclassified"
     return sector_uplift.get(s_clean, 0)
+
 work["_sector_points"] = work["_sector"].map(sector_points).clip(0, w_sector)
 
-# Referee & Alumni - more robust yes/no detection
-def yes_no_points(x, cap):
-    if pd.isna(x) or x is None:
-        return 0
-    text = str(x).strip().lower()
-    if not text:
-        return 0
-    # Check for various yes patterns
-    yes_patterns = ["yes", "y", "true", "1", "ja", "oui", "si"]
-    if any(text == p or text.startswith(p + " ") or text.startswith(p + ",") for p in yes_patterns):
-        return cap
-    return 0
-work["_ref_points"] = work[ref_col].apply(lambda x: yes_no_points(x, w_referee)) if ref_col != "— none —" and ref_col in work.columns else 0
-work["_alm_points"] = work[alm_col].apply(lambda x: yes_no_points(x, w_alumni)) if alm_col != "— none —" and alm_col in work.columns else 0
+# Referee & Alumni (tightened yes/no detection + free-text treated as yes)
+work["_ref_points"] = (
+    work[ref_col].apply(lambda x: yes_no_points(x, w_referee))
+    if ref_col != "— none —" and ref_col in work.columns else 0
+)
+work["_alm_points"] = (
+    work[alm_col].apply(lambda x: yes_no_points(x, w_alumni))
+    if alm_col != "— none —" and alm_col in work.columns else 0
+)
 
 # Function relevance (simple keyword heuristic)
 def function_points(x):
-    if not isinstance(x, str): return 0
+    if not isinstance(x, str):
+        return 0
     xl = x.lower()
-    direct = any(k in xl for k in ["lecturer","extension","analyst","programme","program officer","policy","teacher","advisor"])
-    indirect = any(k in xl for k in ["assistant","admin","coordinator","student","intern"])
-    if direct: return w_function
-    if indirect: return w_function * 0.5
+    direct = any(k in xl for k in ["lecturer", "extension", "analyst", "programme", "program officer", "policy", "teacher", "advisor"])
+    indirect = any(k in xl for k in ["assistant", "admin", "coordinator", "student", "intern"])
+    if direct:
+        return w_function
+    if indirect:
+        return w_function * 0.5
     return 0
-work["_func_points"] = work[func_col].apply(function_points) if func_col != "— none —" and func_col in work.columns else 0
 
-# Language & time - support both ASCII and Unicode variants
-def map_band(val, valid):
-    if not isinstance(val, str): return None
-    v = val.strip()
-    return v if v in valid else None
+work["_func_points"] = (
+    work[func_col].apply(function_points)
+    if func_col != "— none —" and func_col in work.columns else 0
+)
 
-work["_time_band"] = work[time_col].apply(lambda x: map_band(x, WEEKLY_TIME_BANDS)) if time_col != "— none —" and time_col in work.columns else None
-work["_lang_band"] = work[lang_col].apply(lambda x: map_band(x, LANG_BANDS)) if lang_col != "— none —" and lang_col in work.columns else None
-
-# Time points - support both ASCII and Unicode
-def get_time_points(x):
-    if x in ["≥3h", ">=3h"]: return 10
-    if x in ["2–3h", "2-3h"]: return 6
-    if x in ["1–2h", "1-2h"]: return 3
-    if x == "<1h": return 0
-    return 0
+# Language & time - support both ASCII and Unicode variants (tightened normalization for time)
+work["_time_band"] = (
+    work[time_col].apply(lambda x: map_band(normalize_time_value(x), WEEKLY_TIME_BANDS))
+    if time_col != "— none —" and time_col in work.columns else None
+)
+work["_lang_band"] = (
+    work[lang_col].apply(lambda x: map_band(x, LANG_BANDS))
+    if lang_col != "— none —" and lang_col in work.columns else None
+)
 
 work["_time_points"] = work["_time_band"].apply(get_time_points) if isinstance(work["_time_band"], pd.Series) else 0
-work["_lang_points"] = work["_lang_band"].apply(lambda x: { "Fluent":5,"Working":3 }.get(x,0)) if isinstance(work["_lang_band"], pd.Series) else 0
+work["_lang_points"] = work["_lang_band"].apply(lambda x: {"Fluent": 5, "Working": 3}.get(x, 0)) if isinstance(work["_lang_band"], pd.Series) else 0
 
 # Cap
 work["_time_points"] = np.minimum(work["_time_points"], w_time) if isinstance(work["_time_points"], pd.Series) else 0
 work["_lang_points"] = np.minimum(work["_lang_points"], w_lang) if isinstance(work["_lang_points"], pd.Series) else 0
 
 # Final RFS
-rfs_cols = ["_mot_scaled","_sector_points","_ref_points","_func_points","_time_points","_lang_points","_alm_points"]
+rfs_cols = ["_mot_scaled", "_sector_points", "_ref_points", "_func_points", "_time_points", "_lang_points", "_alm_points"]
 work["_RFS"] = work[rfs_cols].sum(axis=1).round(2)
 
 # Decision
-work["_label"] = work.apply(lambda r: label_band(
-    r["_RFS"], DEFAULT_THRESH_ADMIT if pd.isna(thr_admit) else thr_admit,
-    DEFAULT_THRESH_PRIORITY if pd.isna(thr_priority) else thr_priority,
-    r["_sector"], equity_reserve=equity_on,
-    equity_range=(DEFAULT_EQUITY_LOWER, DEFAULT_EQUITY_UPPER)), axis=1)
+work["_label"] = work.apply(
+    lambda r: label_band(
+        r["_RFS"],
+        DEFAULT_THRESH_ADMIT if pd.isna(thr_admit) else thr_admit,
+        DEFAULT_THRESH_PRIORITY if pd.isna(thr_priority) else thr_priority,
+        r["_sector"],
+        equity_reserve=equity_on,
+        equity_range=(DEFAULT_EQUITY_LOWER, DEFAULT_EQUITY_UPPER),
+    ),
+    axis=1
+)
 
 # Prepare output
-out_cols = ["PID","_sector","_RFS","_label","_mot_scaled","_sector_points","_ref_points","_func_points","_time_points","_lang_points","_alm_points"]
+out_cols = ["PID", "_sector", "_RFS", "_label", "_mot_scaled", "_sector_points", "_ref_points", "_func_points", "_time_points", "_lang_points", "_alm_points"]
 pretty = work[out_cols].rename(columns={
-    "_sector":"Sector","_RFS":"RFS","_label":"Decision",
-    "_mot_scaled":"MotivationPts","_sector_points":"SectorPts","_ref_points":"RefereePts","_func_points":"FunctionPts","_time_points":"TimePts","_lang_points":"LanguagePts","_alm_points":"AlumniPts"
+    "_sector": "Sector",
+    "_RFS": "RFS",
+    "_label": "Decision",
+    "_mot_scaled": "MotivationPts",
+    "_sector_points": "SectorPts",
+    "_ref_points": "RefereePts",
+    "_func_points": "FunctionPts",
+    "_time_points": "TimePts",
+    "_lang_points": "LanguagePts",
+    "_alm_points": "AlumniPts"
 })
 
 # Append any HASH_* columns (but never raw identifiers)
@@ -512,20 +605,29 @@ tab_score, tab_summary, tab_about = st.tabs(["📊 Score", "📈 Summary", "ℹ�
 
 with tab_score:
     st.dataframe(pretty, use_container_width=True)
-    
+
+    # Tighten: diagnostics so you spot all-"no" columns instantly
+    with st.expander("🧪 Diagnostics (value counts)"):
+        for c in [ref_col, alm_col, time_col, lang_col]:
+            if c != "— none —" and c in work.columns:
+                st.write(f"**{c}**")
+                st.write(work[c].astype(str).str.strip().str.lower().value_counts(dropna=False))
+
     # Create download version with original emails
     download_df = pretty.copy()
-    # Add original emails from work dataframe (properly aligned after dedup)
     if "_original_email" in work.columns:
         download_df.insert(1, "Email", work["_original_email"].values)
-    
+
     csv_buf = io.StringIO()
     download_df.to_csv(csv_buf, index=False)
-    st.download_button("⬇️ Download scored CSV (with emails)",
-                       data=csv_buf.getvalue(), file_name="rfs_scored.csv", mime="text/csv")
+    st.download_button(
+        "⬇️ Download scored CSV (with emails)",
+        data=csv_buf.getvalue(),
+        file_name="rfs_scored.csv",
+        mime="text/csv"
+    )
 
 with tab_summary:
-    # Decision counts with colored tags
     dec_counts = pretty["Decision"].value_counts().to_dict()
 
     def pill(lbl, css_class):
@@ -540,7 +642,7 @@ with tab_summary:
 
     st.divider()
     st.subheader("By sector")
-    by_sector = pretty.groupby(["Sector","Decision"]).size().to_frame("N").reset_index()
+    by_sector = pretty.groupby(["Sector", "Decision"]).size().to_frame("N").reset_index()
     st.dataframe(by_sector, use_container_width=True)
 
 with tab_about:
