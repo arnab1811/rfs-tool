@@ -505,6 +505,9 @@ if lang_col == "— none —":
 # ---------------------------
 work = df.copy()
 
+# Remove PID if it already exists in the uploaded file
+if "PID" in work.columns:
+    work.drop(columns=["PID"], inplace=True)
 if email_col != "— none —" and email_col in work.columns:
     work["_original_email"] = work[email_col].copy()
     emails_norm = work[email_col].map(normalize_email)
@@ -733,3 +736,4 @@ with tab_about:
     """)
 
 st.caption("🔄 Recalibrated v2 based on 2025 validation data | Privacy: PIDs on screen, emails in download")
+
