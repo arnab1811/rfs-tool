@@ -239,45 +239,156 @@ st.markdown(f"""
 
 uploaded = st.file_uploader("Upload applications file", type=["csv", "xlsx"])
 if uploaded:
-    df = pd.read_excel(uploaded) if uploaded.name.endswith(".xlsx") else pd.read_csv(uploaded)
-    
-    # 🧭 COLUMN MAPPING (Simplified for example, use your 'pick' function here)
-    email_col, mot_col, func_col, ref_col, lang_col, time_col, org_col, alm_col = "Email", "MotivationText", "FunctionTitle", "RefereeConfirmsFit", "LanguageComfort", "WeeklyTimeBand", "Organisation", "AlumniReferral"
+    # ---- Robust read ----
+    name = uploaded.name.lower()
+    if name.endswith(".xlsx"):
+        df = pd.read_excel(uploaded, engine="openpyxl")
+    else:
+        df = pd.read_csv(uploaded, encoding_errors="ignore")
 
+    # ---- Clean column names (prevents silly KeyErrors) ----
+    df.columns = [re.sub(r"\s+", " ", str(c)).strip() for c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated()]  # keep first if duplicate headers
+
+    # ---- Column detection + mapping UI ----
+    def _find_cols(patterns):
+        hits = []
+        for c in df.columns:
+            cl = str(c).lower()
+            if any(re.search(p, cl) for p in patterns):
+                hits.append(c)
+        return hits
+
+    def pick_column(label, patterns, required=True):
+        hits = _find_cols(patterns)
+        # default: first hit if any, else none
+        options = ["— Select —"] + list(df.columns)
+        default = hits[0] if hits else "— Select —"
+        idx = options.index(default) if default in options else 0
+        chosen = st.selectbox(label, options, index=idx)
+        if chosen == "— Select —":
+            if required:
+                st.error(f"Missing required mapping for: {label}")
+                st.stop()
+            return None
+        return chosen
+
+    st.markdown("### Column mapping (auto-detected; change only if needed)")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        email_col = pick_column("Email", [r"\bemail\b", r"e-mail"])
+        mot_col   = pick_column("Motivation text", [r"motivation", r"why.*apply", r"statement", r"interest", r"reason"])
+        func_col  = pick_column("Function / job title", [r"\bfunction\b", r"job", r"title", r"position", r"role"])
+        org_col   = pick_column("Organisation", [r"organi[sz]ation", r"employer", r"company", r"institution", r"affiliation"], required=False)
+
+    with c2:
+        ref_col   = pick_column("Referee / recommendation", [r"refere", r"reference", r"recommend", r"endorse"], required=False)
+        lang_col  = pick_column("Language level", [r"language", r"english", r"fluency", r"proficien", r"comfort"], required=False)
+        time_col  = pick_column("Weekly time commitment", [r"time", r"hours", r"weekly", r"commit"], required=False)
+        alm_col   = pick_column("Alumni referral", [r"alumni", r"referral", r"referred", r"how.*hear"], required=False)
+
+    # ---- More tolerant parsers ----
+    def language_points(x):
+        if pd.isna(x): return 0.0
+        t = str(x).strip().lower()
+        if any(k in t for k in ["fluent", "native", "advanced", "excellent"]):
+            return float(preset["w_lang"])
+        if any(k in t for k in ["working", "intermediate", "good", "professional"]):
+            return float(preset["w_lang"]) * 0.6
+        if any(k in t for k in ["basic", "limited", "beginner"]):
+            return float(preset["w_lang"]) * 0.3
+        return 0.0
+
+    def time_points(x):
+        if pd.isna(x): return 0.0
+        t = str(x).strip().lower().replace("–", "-").replace("—", "-")
+        # allow both bands and plain text like "3 hours"
+        if any(k in t for k in [">=3", "3+", "3 h", "3h", "more than 3", "at least 3"]):
+            return 10.0
+        if any(k in t for k in ["2-3", "2 to 3", "2.5", "2 h", "2h"]):
+            return 6.0
+        if any(k in t for k in ["1-2", "1 to 2", "1.5", "1 h", "1h"]):
+            return 3.0
+        if any(k in t for k in ["<1", "less than 1", "0.5", "30 min"]):
+            return 0.0
+        return 0.0
+
+    def safe_text(x):
+        return "" if pd.isna(x) else str(x)
+
+    # ---- Build working frame ----
     work = df.copy()
-    work['Email_Norm'] = work[email_col].map(normalize_email)
-    work.insert(0, "PID", work['Email_Norm'].apply(hash_id))
+    work["Email_Norm"] = work[email_col].apply(normalize_email)
 
-    # 1. Motivation
-    mot_scores = work[mot_col].apply(lambda x: rubric_heuristic_score(x, preset["min_motivation_words"]))
-    work["MotivationPts"] = (mot_scores.apply(sum) / 30.0) * preset["w_motivation"]
+    # Drop empty emails (otherwise everyone hashes to same PID)
+    work = work[work["Email_Norm"] != ""].copy()
+    if work.empty:
+        st.error("No valid email values found after normalization. Check your Email column mapping.")
+        st.stop()
 
-    # 2. Function (THE KEY SIGNAL)
+    work.insert(0, "PID", work["Email_Norm"].apply(hash_id))
+
+    # ---- Optional: de-duplicate repeated applicants by email ----
+    # If a timestamp-like column exists, keep the latest; else keep last row in file order.
+    ts_hits = _find_cols([r"timestamp", r"submitted", r"submission", r"date"])
+    if ts_hits:
+        ts_col = ts_hits[0]
+        work["_ts"] = pd.to_datetime(work[ts_col], errors="coerce")
+        work = work.sort_values("_ts").drop_duplicates("Email_Norm", keep="last").drop(columns=["_ts"])
+    else:
+        before = len(work)
+        work = work.drop_duplicates("Email_Norm", keep="last")
+        after = len(work)
+        if after < before:
+            st.info(f"De-duplicated {before-after} repeated emails (kept last entry per email).")
+
+    # ---- 1) Motivation ----
+    if mot_col:
+        mot_scores = work[mot_col].apply(lambda x: rubric_heuristic_score(safe_text(x), preset["min_motivation_words"]))
+        work["MotivationPts"] = (mot_scores.apply(sum) / 30.0) * preset["w_motivation"]
+    else:
+        work["MotivationPts"] = 0.0
+
+    # ---- 2) Function ----
     def function_points(x):
-        if not isinstance(x, str): return 0
-        xl = x.lower()
-        # High-performing keywords from the leaderboard
+        xl = safe_text(x).lower()
+        if xl == "": return 0.0
         direct = any(k in xl for k in ["specialist", "officer", "advisor", "director", "manager", "analyst", "lecturer"])
-        if direct: return preset["w_function"]
-        return preset["w_function"] * 0.4
+        return float(preset["w_function"]) if direct else float(preset["w_function"]) * 0.4
 
     work["FunctionPts"] = work[func_col].apply(function_points)
 
-    # 3. Referee & Language & Sector
-    work["RefereePts"] = work[ref_col].apply(lambda x: yes_no_points(x, preset["w_referee"]))
-    work["Sector"] = work[org_col].apply(org_to_sector)
-    work["SectorPts"] = work["Sector"].map(lambda s: preset["sector_uplift"].get(s, 0))
-    
-    work["LanguagePts"] = work[lang_col].apply(normalize_mapping_value).map({"fluent": preset["w_lang"], "working": preset["w_lang"]*0.6, "basic": preset["w_lang"]*0.3}).fillna(0)
-    work["TimePts"] = work[time_col].apply(normalize_mapping_value).apply(get_time_points)
+    # ---- 3) Referee / Sector / Language / Time ----
+    work["RefereePts"] = work[ref_col].apply(lambda x: yes_no_points(x, preset["w_referee"])) if ref_col else 0.0
 
-    # 4. Final Scoring
+    if org_col:
+        work["Sector"] = work[org_col].apply(org_to_sector)
+    else:
+        work["Sector"] = "Other/Unclassified"
+
+    work["SectorPts"] = work["Sector"].map(lambda s: preset["sector_uplift"].get(s, 0))
+
+    work["LanguagePts"] = work[lang_col].apply(language_points) if lang_col else 0.0
+    work["TimePts"]     = work[time_col].apply(time_points) if time_col else 0.0
+
+    # ---- 4) Final scoring ----
     pts_cols = ["MotivationPts", "FunctionPts", "RefereePts", "SectorPts", "LanguagePts", "TimePts"]
     work["RFS"] = work[pts_cols].sum(axis=1).round(2)
-    work["predicted Decision"] = work.apply(lambda r: label_band(r["RFS"], preset["thresh_admit"], preset["thresh_priority"], r["Sector"], True, (preset["equity_lower"], preset["equity_upper"])), axis=1)
+    work["predicted Decision"] = work.apply(
+        lambda r: label_band(
+            r["RFS"],
+            preset["thresh_admit"],
+            preset["thresh_priority"],
+            r["Sector"],
+            True,
+            (preset["equity_lower"], preset["equity_upper"])
+        ),
+        axis=1
+    )
 
     st.success(f"✅ Scored {len(work)} applicants using **{preset['name']}** model")
-    st.dataframe(work[["PID", "Sector", "RFS", "predicted Decision"] + pts_cols], use_container_width=True)
-    
-    csv = work.to_csv(index=False).encode('utf-8')
+    st.dataframe(work[["PID", "Email_Norm", "Sector", "RFS", "predicted Decision"] + pts_cols], use_container_width=True)
+
+    csv = work.to_csv(index=False).encode("utf-8")
     st.download_button("⬇️ Download v3.1 Optimized CSV", csv, "rfs_v3_1_optimized.csv", "text/csv")
