@@ -122,22 +122,22 @@ def inject_css():
         opacity: .95;
       }}
       .logo-img {{
-        height: 44px;
-        width: auto;
-        display: block;
-        background: rgba(255,255,255,.06);
-        padding: 6px 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,.18);
+          height: 44px;
+          width: auto;
+          display: block;
+          background: transparent;
+          padding: 0;
+          border-radius: 0;
+          border: 0;
       }}
       .logo-right {{
-        height: 44px;
-        width: auto;
-        display: block;
-        background: rgba(255,255,255,.06);
-        padding: 6px 10px;
-        border-radius: 10px;
-        border: 1px solid rgba(255,255,255,.18);
+          height: 44px;
+          width: auto;
+          display: block;
+          background: transparent;
+          padding: 0;
+          border-radius: 0;
+          border: 0;
       }}
 
       /* Version badge */
