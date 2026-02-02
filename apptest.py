@@ -2,6 +2,7 @@ import io
 import re
 import base64
 import hashlib
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -17,23 +18,39 @@ st.set_page_config(
     layout="wide"
 )
 
-# ------------ Brand palette ------------
+# ---------------------------
+# Solid palette (from your image)
+# ---------------------------
 PALETTE = {
-    "green":  "#78A22F",
-    "blue":   "#007C9E",
-    "orange": "#F58025",
-    "yellow": "#F8E71C",
-    "red":    "#D0021B",
-    "ink":    "#1F2A33",
-    "bg2":    "#F7FBFC"
+    "accent": "#8B6C23",   # gold/brown
+    "primary":  "#C02080",   # magenta
+    "white":   "#FFFFFF",
+    "ink":     "#1F2A33",
+    "bg":      "#FFFFFF",
+    "bg2":     "#F6F3EA",   # warm off-white (optional)
+    "border":  "#E6E0D2"
 }
 
 # ---------------------------
-# Local logos
+# Logos (local + remote fallback)
 # ---------------------------
 APP_DIR = Path(__file__).resolve().parent
 LOGO1_PATH = APP_DIR / "logo1.png"
 LOGO2_PATH = APP_DIR / "logo2.png"
+
+LOGO1_URL = "https://raw.githubusercontent.com/arnab1811/rfs-tool/main/logo1.png"
+LOGO2_URL = "https://raw.githubusercontent.com/arnab1811/rfs-tool/main/logo2.png"
+
+def ensure_logo(path: Path, url: str):
+    """Download logo from GitHub raw if it doesn't exist locally."""
+    if path.exists():
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        urllib.request.urlretrieve(url, str(path))
+    except Exception:
+        # If download fails, UI will still render without that logo.
+        pass
 
 def _img_to_b64(path: Path) -> str:
     try:
@@ -42,59 +59,132 @@ def _img_to_b64(path: Path) -> str:
     except Exception:
         return ""
 
+ensure_logo(LOGO1_PATH, LOGO1_URL)
+ensure_logo(LOGO2_PATH, LOGO2_URL)
+
 LOGO1_B64 = _img_to_b64(LOGO1_PATH)
 LOGO2_B64 = _img_to_b64(LOGO2_PATH)
 
+# ---------------------------
+# CSS injection (solid styling)
+# ---------------------------
 def inject_css():
-    st.markdown("""
+    st.markdown(f"""
     <style>
-      :root {
-        --green:  #78A22F;
-        --blue:   #007C9E;
-        --orange: #F58025;
-        --yellow: #F8E71C;
-        --red:    #D0021B;
-        --ink:    #1F2A33;
-        --bg2:    #F7FBFC;
-      }
+      :root {{
+        --primary: {PALETTE["primary"]};
+        --accent:  {PALETTE["accent"]};
+        --white:   {PALETTE["white"]};
+        --ink:     {PALETTE["ink"]};
+        --bg:      {PALETTE["bg"]};
+        --bg2:     {PALETTE["bg2"]};
+        --border:  {PALETTE["border"]};
+      }}
 
-      html, body, .stApp {
+      html, body, .stApp {{
         font-family: Verdana, Geneva, Arial, sans-serif;
         color: var(--ink);
+        background: var(--bg);
         -webkit-font-smoothing: antialiased;
-      }
+      }}
 
-      .app-banner {
-        padding: 18px 22px; border-radius: 14px; margin: 2px 0 24px 0;
-        background: linear-gradient(135deg, var(--green) 0%, var(--blue) 100%); color: #fff;
-      }
-      .app-banner-inner {
-        display: flex; align-items: center; justify-content: space-between; gap: 16px;
-      }
-      .app-banner-left h2 { margin: 0 0 4px 0; font-weight: 700; }
-      .app-banner-left p  { margin: 0; opacity: .95; }
+      /* Top banner */
+      .app-banner {{
+        padding: 16px 18px;
+        border-radius: 14px;
+        margin: 2px 0 22px 0;
+        background: var(--primary);
+        color: var(--white);
+        border: 1px solid rgba(255,255,255,.15);
+      }}
+      .app-banner-inner {{
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }}
+      .brand-left {{
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+      }}
+      .brand-title {{
+        min-width: 0;
+      }}
+      .brand-title h2 {{
+        margin: 0 0 4px 0;
+        font-weight: 700;
+        line-height: 1.15;
+      }}
+      .brand-title p {{
+        margin: 0;
+        opacity: .95;
+      }}
+      .logo-img {{
+        height: 44px;
+        width: auto;
+        display: block;
+        background: rgba(255,255,255,.06);
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.18);
+      }}
+      .logo-right {{
+        height: 44px;
+        width: auto;
+        display: block;
+        background: rgba(255,255,255,.06);
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.18);
+      }}
 
-      .stButton > button, .stDownloadButton button {
-        border-radius: 10px; border: 1px solid var(--blue); background: var(--blue);
-        color: #fff; font-weight: 700;
-      }
-
-      .tag { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; margin-right:8px; }
-      .tag-priority { background: var(--orange); color:#000; }
-      .tag-admit    { background: var(--green);  color:#fff; }
-      .tag-equity   { background: var(--yellow); color:#000; border:1px solid #D8C600; }
-      .tag-reserve  { background: var(--bg2);    color: var(--ink); border:1px solid #CFDCE4; }
-      
-      .v3-badge {
+      /* Version badge */
+      .v3-badge {{
         display: inline-block;
-        background: linear-gradient(135deg, var(--orange) 0%, var(--red) 100%);
+        background: var(--accent);
         color: #fff;
         padding: 4px 12px;
         border-radius: 20px;
         font-size: 11px;
         font-weight: 700;
         margin-left: 8px;
-      }
+        vertical-align: middle;
+      }}
+
+      /* Buttons */
+      .stButton > button, .stDownloadButton button {{
+        border-radius: 10px !important;
+        border: 1px solid var(--primary) !important;
+        background: var(--primary) !important;
+        color: #fff !important;
+        font-weight: 700 !important;
+      }}
+      .stButton > button:hover, .stDownloadButton button:hover {{
+        border-color: var(--accent) !important;
+        background: var(--accent) !important;
+      }}
+
+      /* Tags */
+      .tag {{
+        display:inline-block;
+        padding:3px 10px;
+        border-radius:999px;
+        font-size:12px;
+        font-weight:700;
+        margin-right:8px;
+        border: 1px solid transparent;
+      }}
+      .tag-priority {{ background: var(--accent); color:#fff; }}
+      .tag-admit    {{ background: var(--primary); color:#fff; }}
+      .tag-equity   {{ background: var(--bg2); color: var(--ink); border:1px solid var(--border); }}
+      .tag-reserve  {{ background: #fff; color: var(--ink); border:1px solid var(--border); }}
+
+      /* Make the sidebar header slightly cleaner */
+      section[data-testid="stSidebar"] > div {{
+        border-right: 1px solid var(--border);
+      }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -111,7 +201,6 @@ inject_css()
 # ---------------------------
 # v3.1 ADAPTIVE PRESETS - Optimized based on Leaderboard Data
 # ---------------------------
-
 PRESETS = {
     "finance_optimized": {
         "name": "Finance-Optimized (v3.1)",
@@ -120,12 +209,12 @@ PRESETS = {
         "thresh_priority": 65,
         "equity_lower": 40,
         "equity_upper": 49,
-        "w_motivation": 15, # Reduced: too noisy
-        "w_sector": 5,     # Reduced: negative correlation
-        "w_referee": 28,   # Kept: strong predictor
-        "w_function": 25,  # Increased: strongest predictor
+        "w_motivation": 15,  # Reduced: too noisy
+        "w_sector": 5,       # Reduced: negative correlation
+        "w_referee": 28,     # Kept: strong predictor
+        "w_function": 25,    # Increased: strongest predictor
         "w_time": 10,
-        "w_lang": 15,      # Captures completion
+        "w_lang": 15,        # Captures completion
         "w_alumni": 5,
         "min_motivation_words": 30,
         "sector_uplift": {
@@ -160,7 +249,8 @@ LANG_BANDS = ["basic", "working", "fluent"]
 # Helpers
 # ---------------------------
 def normalize_email(x):
-    if pd.isna(x): return ""
+    if pd.isna(x):
+        return ""
     return str(x).strip().lower()
 
 def hash_id(value: str) -> str:
@@ -171,21 +261,31 @@ def org_to_sector(org_text: str) -> str:
     if not isinstance(org_text, str) or org_text.strip() == "":
         return "Other/Unclassified"
     x = org_text.lower()
-    if any(k in x for k in ["universit", "school", "educat"]): return "Education"
-    if any(k in x for k in ["ngo", "foundation", "association", "civil", "non profit", "non-profit"]): return "NGO/CSO"
-    if any(k in x for k in ["ministry", "gov", "municipal", "department of", "bureau"]): return "Government"
-    if any(k in x for k in ["united nations", "world bank", "fao", "ifad", "ifpri", "undp", "unesco"]): return "Multilateral"
-    if any(k in x for k in ["ltd", "company", "bv", "inc", "plc", "gmbh", "sarl"]): return "Private"
-    if any(k in x for k in ["farmer", "coop", "co-op", "cooperative"]): return "Farmer Org"
-    if any(k in x for k in ["consult"]): return "Consultancy"
-    if any(k in x for k in ["bank", "finance", "microfinance"]): return "Finance"
+    if any(k in x for k in ["universit", "school", "educat"]):
+        return "Education"
+    if any(k in x for k in ["ngo", "foundation", "association", "civil", "non profit", "non-profit"]):
+        return "NGO/CSO"
+    if any(k in x for k in ["ministry", "gov", "municipal", "department of", "bureau"]):
+        return "Government"
+    if any(k in x for k in ["united nations", "world bank", "fao", "ifad", "ifpri", "undp", "unesco"]):
+        return "Multilateral"
+    if any(k in x for k in ["ltd", "company", "bv", "inc", "plc", "gmbh", "sarl"]):
+        return "Private"
+    if any(k in x for k in ["farmer", "coop", "co-op", "cooperative"]):
+        return "Farmer Org"
+    if any(k in x for k in ["consult"]):
+        return "Consultancy"
+    if any(k in x for k in ["bank", "finance", "microfinance"]):
+        return "Finance"
     return "Other/Unclassified"
 
 def rubric_heuristic_score(text: str, min_words: int):
-    if not isinstance(text, str) or text.strip() == "": return (0, 0, 0)
+    if not isinstance(text, str) or text.strip() == "":
+        return (0, 0, 0)
     t = text.strip()
     words = len(t.split())
-    if words < min_words: return (0, 0, 0)
+    if words < min_words:
+        return (0, 0, 0)
 
     has_data = any(w in t.lower() for w in ["data", "dataset", "dashboard", "faostat", "survey"])
     has_numbers = bool(re.search(r"\b\d+\b", t))
@@ -197,45 +297,74 @@ def rubric_heuristic_score(text: str, min_words: int):
     return (spec, feas, rel)
 
 def label_band(val, admit_thr, priority_thr, sector, equity_reserve, equity_range):
-    if val >= priority_thr: return "Priority"
-    if val >= admit_thr: return "Admit"
+    if val >= priority_thr:
+        return "Priority"
+    if val >= admit_thr:
+        return "Admit"
     if equity_reserve and sector == "Farmer Org" and equity_range[0] <= val <= equity_range[1]:
         return "Reserve (Equity)"
     return "Reserve"
 
 def normalize_mapping_value(v):
-    if not isinstance(v, str): return ""
+    if not isinstance(v, str):
+        return ""
     return v.strip().lower().replace("–", "-").replace("—", "-").replace("≥", ">=").replace(" ", "")
 
 def get_time_points(x):
-    if ">=3h" in x: return 10
-    if "2-3h" in x: return 6
-    if "1-2h" in x: return 3
+    if ">=3h" in x:
+        return 10
+    if "2-3h" in x:
+        return 6
+    if "1-2h" in x:
+        return 3
     return 0
 
 def yes_no_points(x, cap):
-    if pd.isna(x): return 0
+    if pd.isna(x):
+        return 0
     text = str(x).strip().lower()
-    if any(text.startswith(p) for p in ["no", "none", "n/a", "0"]): return 0
+    if any(text.startswith(p) for p in ["no", "none", "n/a", "0"]):
+        return 0
     return cap
 
 # ---------------------------
 # Sidebar & Main App
 # ---------------------------
 st.sidebar.header("⚙️ Configuration")
-preset_choice = st.sidebar.radio("Choose a preset:", options=list(PRESETS.keys()), format_func=lambda x: PRESETS[x]["name"])
+preset_choice = st.sidebar.radio(
+    "Choose a preset:",
+    options=list(PRESETS.keys()),
+    format_func=lambda x: PRESETS[x]["name"]
+)
 preset = PRESETS[preset_choice]
 
+# ---------------------------
+# Banner with two logos (left + right)
+# ---------------------------
+logo1_html = ""
+logo2_html = ""
+
+if LOGO1_B64:
+    logo1_html = f'<img class="logo-img" src="data:image/png;base64,{LOGO1_B64}" alt="Logo 1"/>'
+if LOGO2_B64:
+    logo2_html = f'<img class="logo-right" src="data:image/png;base64,{LOGO2_B64}" alt="Logo 2"/>'
+
 st.markdown(f"""
-    <div class="app-banner">
-      <div class="app-banner-inner">
-        <div class="app-banner-left">
-          <h2>Recruitment Fit Score (RFS) <span class="v3-badge">v3.1 OPTIMIZED</span></h2>
-          <p>Validated against leaderboard success data (Function & Referee priority)</p>
-        </div>
+<div class="app-banner">
+  <div class="app-banner-inner">
+    <div class="brand-left">
+      {logo1_html}
+      <div class="brand-title">
+        <h2>Recruitment Fit Score (RFS) <span class="v3-badge">v3.1 OPTIMIZED</span></h2>
+        <p>Validated against leaderboard success data (Function &amp; Referee priority)</p>
       </div>
     </div>
-    """, unsafe_allow_html=True)
+    <div>
+      {logo2_html}
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 uploaded = st.file_uploader("Upload applications file", type=["csv", "xlsx"])
 if uploaded:
@@ -261,7 +390,6 @@ if uploaded:
 
     def pick_column(label, patterns, required=True):
         hits = _find_cols(patterns)
-        # default: first hit if any, else none
         options = ["— Select —"] + list(df.columns)
         default = hits[0] if hits else "— Select —"
         idx = options.index(default) if default in options else 0
@@ -290,7 +418,8 @@ if uploaded:
 
     # ---- More tolerant parsers ----
     def language_points(x):
-        if pd.isna(x): return 0.0
+        if pd.isna(x):
+            return 0.0
         t = str(x).strip().lower()
         if any(k in t for k in ["fluent", "native", "advanced", "excellent"]):
             return float(preset["w_lang"])
@@ -301,9 +430,9 @@ if uploaded:
         return 0.0
 
     def time_points(x):
-        if pd.isna(x): return 0.0
+        if pd.isna(x):
+            return 0.0
         t = str(x).strip().lower().replace("–", "-").replace("—", "-")
-        # allow both bands and plain text like "3 hours"
         if any(k in t for k in [">=3", "3+", "3 h", "3h", "more than 3", "at least 3"]):
             return 10.0
         if any(k in t for k in ["2-3", "2 to 3", "2.5", "2 h", "2h"]):
@@ -330,7 +459,6 @@ if uploaded:
     work.insert(0, "PID", work["Email_Norm"].apply(hash_id))
 
     # ---- Optional: de-duplicate repeated applicants by email ----
-    # If a timestamp-like column exists, keep the latest; else keep last row in file order.
     ts_hits = _find_cols([r"timestamp", r"submitted", r"submission", r"date"])
     if ts_hits:
         ts_col = ts_hits[0]
@@ -353,7 +481,8 @@ if uploaded:
     # ---- 2) Function ----
     def function_points(x):
         xl = safe_text(x).lower()
-        if xl == "": return 0.0
+        if xl == "":
+            return 0.0
         direct = any(k in xl for k in ["specialist", "officer", "advisor", "director", "manager", "analyst", "lecturer"])
         return float(preset["w_function"]) if direct else float(preset["w_function"]) * 0.4
 
